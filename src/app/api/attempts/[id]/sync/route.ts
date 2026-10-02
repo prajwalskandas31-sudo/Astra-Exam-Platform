@@ -11,14 +11,14 @@ export async function PUT(
     const { id } = await params;
     const session = await getServerSession(authOptions);
     if (!session || session.user.role !== "STUDENT") {
-      return new NextResponse("Unauthorized", { status: 401 });
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const body = await request.json();
     const { answers, timeRemaining } = body;
 
     if (!answers || timeRemaining === undefined) {
-      return new NextResponse("Invalid payload", { status: 400 });
+      return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
     }
 
     const attempt = await prisma.attempt.findUnique({
@@ -26,11 +26,11 @@ export async function PUT(
     });
 
     if (!attempt || attempt.userId !== session.user.id) {
-      return new NextResponse("Not Found", { status: 404 });
+      return NextResponse.json({ error: "Not Found" }, { status: 404 });
     }
 
     if (attempt.status === "COMPLETED") {
-      return new NextResponse("Attempt already completed", { status: 400 });
+      return NextResponse.json({ error: "Attempt already completed" }, { status: 400 });
     }
 
     // Update Attempt Time
@@ -71,7 +71,7 @@ export async function PUT(
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("[SYNC_PUT]", error);
-    return new NextResponse("Internal Error", { status: 500 });
+    return NextResponse.json({ error: "Internal Error" }, { status: 500 });
   }
 }
 

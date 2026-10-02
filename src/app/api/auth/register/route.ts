@@ -8,7 +8,7 @@ export async function POST(request: Request) {
     const { name, email, password, phone, role = "STUDENT" } = body;
 
     if (!name || !email || !password) {
-      return new NextResponse("Missing required fields", { status: 400 });
+      return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
     const exist = await prisma.user.findUnique({
@@ -16,7 +16,7 @@ export async function POST(request: Request) {
     });
 
     if (exist) {
-      return new NextResponse("Email already exists", { status: 400 });
+      return NextResponse.json({ error: "Email already exists" }, { status: 400 });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -54,7 +54,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true, user: { id: user.id, email: user.email, role: user.role } });
   } catch (error) {
     console.error("[REGISTER_POST]", error);
-    return new NextResponse("Internal Error", { status: 500 });
+    return NextResponse.json({ error: "Internal Error" }, { status: 500 });
   }
 }
 

@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 export async function GET(request: Request) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session) return new NextResponse("Unauthorized", { status: 401 });
+    if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const { searchParams } = new URL(request.url);
     const type = searchParams.get("type");
@@ -34,7 +34,7 @@ export async function GET(request: Request) {
     return NextResponse.json(tests);
   } catch (error) {
     console.error("[TESTS_GET]", error);
-    return new NextResponse("Internal Error", { status: 500 });
+    return NextResponse.json({ error: "Internal Error" }, { status: 500 });
   }
 }
 
@@ -43,7 +43,7 @@ export async function POST(request: Request) {
     const session = await getServerSession(authOptions);
 
     if (!session || (session.user.role !== "ADMIN" && session.user.role !== "MENTOR")) {
-      return new NextResponse("Unauthorized", { status: 401 });
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const body = await request.json();
@@ -69,7 +69,7 @@ export async function POST(request: Request) {
     return NextResponse.json(test);
   } catch (error) {
     console.error("[TESTS_POST]", error);
-    return new NextResponse("Internal Error", { status: 500 });
+    return NextResponse.json({ error: "Internal Error" }, { status: 500 });
   }
 }
 

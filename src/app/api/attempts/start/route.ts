@@ -7,12 +7,12 @@ export async function POST(request: Request) {
   try {
     const session = await getServerSession(authOptions);
     if (!session || session.user.role !== "STUDENT") {
-      return new NextResponse("Unauthorized", { status: 401 });
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const { testId } = await request.json();
     if (!testId) {
-      return new NextResponse("Missing testId", { status: 400 });
+      return NextResponse.json({ error: "Missing testId" }, { status: 400 });
     }
 
     const test = await prisma.test.findUnique({
@@ -27,7 +27,7 @@ export async function POST(request: Request) {
     });
 
     if (!test) {
-      return new NextResponse("Test not found", { status: 404 });
+      return NextResponse.json({ error: "Test not found" }, { status: 404 });
     }
 
     // Create a new attempt
@@ -43,7 +43,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ attemptId: attempt.id });
   } catch (error) {
     console.error("[ATTEMPT_START_POST]", error);
-    return new NextResponse("Internal Error", { status: 500 });
+    return NextResponse.json({ error: "Internal Error" }, { status: 500 });
   }
 }
 

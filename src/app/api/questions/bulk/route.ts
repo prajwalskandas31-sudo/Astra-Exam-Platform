@@ -8,7 +8,7 @@ export async function POST(request: Request) {
     const session = await getServerSession(authOptions);
 
     if (!session || (session.user.role !== "ADMIN" && session.user.role !== "MENTOR")) {
-      return new NextResponse("Unauthorized", { status: 401 });
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const body = await request.json();
@@ -20,7 +20,7 @@ export async function POST(request: Request) {
       questionsToInsert = body.questions;
       sourceFile = body.sourceFile || null;
     } else if (!Array.isArray(body)) {
-      return new NextResponse("Invalid JSON format. Expected an array of questions.", { status: 400 });
+      return NextResponse.json({ error: "Invalid JSON format. Expected an array of questions." }, { status: 400 });
     }
 
     const createdCount = await prisma.$transaction(
@@ -45,7 +45,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true, count: createdCount.length });
   } catch (error) {
     console.error("[QUESTIONS_BULK_POST]", error);
-    return new NextResponse("Internal Error", { status: 500 });
+    return NextResponse.json({ error: "Internal Error" }, { status: 500 });
   }
 }
 

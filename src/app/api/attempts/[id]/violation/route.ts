@@ -11,14 +11,14 @@ export async function POST(
     const { id } = await params;
     const session = await getServerSession(authOptions);
     if (!session || session.user.role !== "STUDENT") {
-      return new NextResponse("Unauthorized", { status: 401 });
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const body = await request.json();
     const { reason } = body;
 
     if (!reason) {
-      return new NextResponse("Missing reason", { status: 400 });
+      return NextResponse.json({ error: "Missing reason" }, { status: 400 });
     }
 
     const attempt = await prisma.attempt.findUnique({
@@ -26,7 +26,7 @@ export async function POST(
     });
 
     if (!attempt || attempt.userId !== session.user.id) {
-      return new NextResponse("Not Found", { status: 404 });
+      return NextResponse.json({ error: "Not Found" }, { status: 404 });
     }
 
     // Log Violation
@@ -40,7 +40,7 @@ export async function POST(
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("[VIOLATION_POST]", error);
-    return new NextResponse("Internal Error", { status: 500 });
+    return NextResponse.json({ error: "Internal Error" }, { status: 500 });
   }
 }
 

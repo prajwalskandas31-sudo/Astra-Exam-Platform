@@ -8,7 +8,7 @@ export async function GET() {
     const session = await getServerSession(authOptions);
 
     if (!session || (session.user.role !== "ADMIN" && session.user.role !== "MENTOR")) {
-      return new NextResponse("Unauthorized", { status: 401 });
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const students = await prisma.user.findMany({
@@ -31,7 +31,7 @@ export async function GET() {
     return NextResponse.json(students);
   } catch (error) {
     console.error("[MENTOR_STUDENTS_GET]", error);
-    return new NextResponse("Internal Error", { status: 500 });
+    return NextResponse.json({ error: "Internal Error" }, { status: 500 });
   }
 }
 

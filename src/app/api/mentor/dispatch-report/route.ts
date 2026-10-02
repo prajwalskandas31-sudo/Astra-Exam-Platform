@@ -9,7 +9,7 @@ export async function POST(req: Request) {
     const session = await getServerSession(authOptions);
 
     if (!session || !["ADMIN", "MENTOR", "FACULTY", "SUPER_ADMIN"].includes(session.user.role)) {
-      return new NextResponse("Unauthorized", { status: 401 });
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const { attemptId, channel = "WHATSAPP" } = await req.json();
@@ -81,7 +81,7 @@ export async function POST(req: Request) {
 
   } catch (error) {
     console.error("[DISPATCH_REPORT_POST]", error);
-    return new NextResponse("Internal Error", { status: 500 });
+    return NextResponse.json({ error: "Internal Error" }, { status: 500 });
   }
 }
 

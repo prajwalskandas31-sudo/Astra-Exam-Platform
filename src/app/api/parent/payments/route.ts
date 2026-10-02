@@ -6,7 +6,7 @@ export async function GET() {
   try {
     const session = await getServerSession(authOptions);
     if (!session || session.user.role !== "PARENT") {
-      return new NextResponse("Unauthorized", { status: 401 });
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const invoices = [
@@ -59,7 +59,7 @@ export async function GET() {
     return NextResponse.json({ summary, invoices });
   } catch (error) {
     console.error("[PARENT_PAYMENTS_GET]", error);
-    return new NextResponse("Internal Error", { status: 500 });
+    return NextResponse.json({ error: "Internal Error" }, { status: 500 });
   }
 }
 
@@ -67,7 +67,7 @@ export async function POST(req: Request) {
   try {
     const session = await getServerSession(authOptions);
     if (!session || session.user.role !== "PARENT") {
-      return new NextResponse("Unauthorized", { status: 401 });
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const { invoiceId, paymentMethod = "UPI" } = await req.json();
@@ -79,7 +79,7 @@ export async function POST(req: Request) {
     });
   } catch (error) {
     console.error("[PARENT_PAYMENTS_POST]", error);
-    return new NextResponse("Internal Error", { status: 500 });
+    return NextResponse.json({ error: "Internal Error" }, { status: 500 });
   }
 }
 

@@ -12,7 +12,7 @@ export async function PATCH(
     const { id } = await params;
 
     if (!session || !["SUPER_ADMIN", "INSTITUTE_ADMIN", "FACULTY", "MENTOR", "ADMIN"].includes(session.user.role)) {
-      return new NextResponse("Unauthorized", { status: 401 });
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const { comment } = await request.json();
@@ -25,7 +25,7 @@ export async function PATCH(
     return NextResponse.json(attempt);
   } catch (error) {
     console.error("[ATTEMPT_COMMENT_PATCH]", error);
-    return new NextResponse("Internal Error", { status: 500 });
+    return NextResponse.json({ error: "Internal Error" }, { status: 500 });
   }
 }
 

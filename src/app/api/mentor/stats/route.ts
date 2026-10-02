@@ -8,7 +8,7 @@ export async function GET() {
     const session = await getServerSession(authOptions);
 
     if (!session || (session.user.role !== "ADMIN" && session.user.role !== "MENTOR")) {
-      return new NextResponse("Unauthorized", { status: 401 });
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const [totalStudents, totalQuestions, totalTests, totalAttempts] = await Promise.all([
@@ -26,7 +26,7 @@ export async function GET() {
     });
   } catch (error) {
     console.error("[MENTOR_STATS_GET]", error);
-    return new NextResponse("Internal Error", { status: 500 });
+    return NextResponse.json({ error: "Internal Error" }, { status: 500 });
   }
 }
 

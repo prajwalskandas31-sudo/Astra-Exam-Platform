@@ -7,7 +7,7 @@ export async function POST(request: Request) {
   try {
     const session = await getServerSession(authOptions);
     if (!session || session.user.role !== "STUDENT") {
-      return new NextResponse("Unauthorized", { status: 401 });
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const body = await request.json();
@@ -30,7 +30,7 @@ export async function POST(request: Request) {
     });
 
     if (!parentAttempt) {
-      return new NextResponse("Attempt not found", { status: 404 });
+      return NextResponse.json({ error: "Attempt not found" }, { status: 404 });
     }
 
     let targetQuestionIds: string[] = [];
@@ -79,7 +79,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ attemptId: newAttempt.id });
   } catch (error) {
     console.error("[RETEST_POST]", error);
-    return new NextResponse("Internal Error", { status: 500 });
+    return NextResponse.json({ error: "Internal Error" }, { status: 500 });
   }
 }
 

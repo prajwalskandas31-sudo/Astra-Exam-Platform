@@ -7,7 +7,7 @@ export async function POST(request: Request) {
     const session = await getServerSession(authOptions);
 
     if (!session || (session.user.role !== "ADMIN" && session.user.role !== "MENTOR")) {
-      return new NextResponse("Unauthorized", { status: 401 });
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const formData = await request.formData();
@@ -16,7 +16,7 @@ export async function POST(request: Request) {
     const questionSetName = formData.get("questionSetName") as string | null;
 
     if (!file) {
-      return new NextResponse("No question file uploaded", { status: 400 });
+      return NextResponse.json({ error: "No question file uploaded" }, { status: 400 });
     }
 
     // Use eval('require') to bypass Next.js Webpack intercepting pdf-parse
@@ -90,7 +90,7 @@ export async function POST(request: Request) {
     }
 
     if (questions.length === 0) {
-      return new NextResponse("Could not parse any questions from the PDF format.", { status: 400 });
+      return NextResponse.json({ error: "Could not parse any questions from the PDF format." }, { status: 400 });
     }
 
     // Insert into DB
@@ -101,7 +101,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true, count: createdCount.length });
   } catch (error) {
     console.error("[PDF_UPLOAD_POST]", error);
-    return new NextResponse("Internal Error", { status: 500 });
+    return NextResponse.json({ error: "Internal Error" }, { status: 500 });
   }
 }
 

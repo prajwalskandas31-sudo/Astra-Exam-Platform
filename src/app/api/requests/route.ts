@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 export async function GET() {
   try {
     const session = await getServerSession(authOptions);
-    if (!session) return new NextResponse("Unauthorized", { status: 401 });
+    if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const isStaff = session.user.role === "ADMIN" || session.user.role === "MENTOR";
 
@@ -23,19 +23,19 @@ export async function GET() {
     return NextResponse.json(requests);
   } catch (error) {
     console.error("[REQUESTS_GET]", error);
-    return new NextResponse("Internal Error", { status: 500 });
+    return NextResponse.json({ error: "Internal Error" }, { status: 500 });
   }
 }
 
 export async function POST(request: Request) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session) return new NextResponse("Unauthorized", { status: 401 });
+    if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const { count, category } = await request.json();
     
     if (count < 3 || count > 5) {
-      return new NextResponse("Request count must be between 3 and 5", { status: 400 });
+      return NextResponse.json({ error: "Request count must be between 3 and 5" }, { status: 400 });
     }
 
     // Check for existing pending request
@@ -47,7 +47,7 @@ export async function POST(request: Request) {
     });
 
     if (existingRequest) {
-      return new NextResponse("You already have a pending request. Please wait for approval.", { status: 400 });
+      return NextResponse.json({ error: "You already have a pending request. Please wait for approval." }, { status: 400 });
     }
 
     const testRequest = await prisma.testRequest.create({
@@ -62,7 +62,7 @@ export async function POST(request: Request) {
     return NextResponse.json(testRequest);
   } catch (error) {
     console.error("[REQUESTS_POST]", error);
-    return new NextResponse("Internal Error", { status: 500 });
+    return NextResponse.json({ error: "Internal Error" }, { status: 500 });
   }
 }
 

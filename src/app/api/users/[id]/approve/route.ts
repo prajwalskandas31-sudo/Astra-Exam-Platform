@@ -12,7 +12,7 @@ export async function PUT(
     const session = await getServerSession(authOptions);
 
     if (!session || (session.user.role !== "ADMIN" && session.user.role !== "MENTOR")) {
-      return new NextResponse("Unauthorized", { status: 401 });
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const { status } = await request.json(); // EXPECT "APPROVED" or "REJECTED"
@@ -29,7 +29,7 @@ export async function PUT(
     return NextResponse.json(updatedUser);
   } catch (error) {
     console.error("[USER_APPROVE_PUT]", error);
-    return new NextResponse("Internal Error", { status: 500 });
+    return NextResponse.json({ error: "Internal Error" }, { status: 500 });
   }
 }
 
