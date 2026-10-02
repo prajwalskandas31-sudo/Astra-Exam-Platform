@@ -30,10 +30,16 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Generate Prisma Client & Database
-        run: npx prisma generate && npx prisma db push
+      - name: Generate Prisma Client & Seed Database
+        env:
+          DATABASE_URL: "file:./dev.db"
+          NEXTAUTH_SECRET: "testing-string-secret-key-123456"
+        run: npx prisma generate && npx prisma db push && npx prisma db seed
 
       - name: Build Next.js
+        env:
+          DATABASE_URL: "file:./dev.db"
+          NEXTAUTH_SECRET: "testing-string-secret-key-123456"
         run: npm run build
 
       - name: Upload artifact
