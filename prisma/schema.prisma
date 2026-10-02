@@ -1,0 +1,287 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  SUPER_ADMIN
+  INSTITUTE_ADMIN
+  FACULTY
+  MENTOR
+  STUDENT
+  PARENT
+}
+
+enum Status {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum TestType {
+  PRACTICE
+  MOCK
+}
+
+enum TestStatus {
+  DRAFT
+  SCHEDULED
+  ACTIVE
+  COMPLETED
+  ARCHIVED
+}
+
+enum ExamMode {
+  CBT
+  OMR
+}
+
+enum QuestionType {
+  SINGLE_CHOICE
+  MULTIPLE_CHOICE
+  NUMERICAL
+  ASSERTION_REASON
+  MATCH_THE_FOLLOWING
+  PASSAGE
+  IMAGE_BASED
+}
+
+enum AttemptStatus {
+  IN_PROGRESS
+  PAUSED
+  COMPLETED
+  AUTO_SUBMITTED // Due to violation or time out
+}
+
+model Organization {
+  id              String         @id @default(cuid())
+  name            String
+  slug            String         @unique
+  logoUrl         String?
+  primaryColor    String?        @default("#3b82f6")
+  secondaryColor  String?        @default("#1e40af")
+  contactEmail    String?
+  contactPhone    String?
+  academicYear    String?        @default("2026-2027")
+  customDomain    String?        @unique
+  whatsappConfig  String?        // JSON configuration for notification provider
+  users           User[]
+  batches         Batch[]
+  tests           Test[]
+  questions       Question[]
+  examTemplates   ExamTemplate[]
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+}
+
+model User {
+  id              String              @id @default(cuid())
+  email           String              @unique
+  password        String
+  name            String
+  phone           String?
+  role            Role                @default(STUDENT)
+  status          Status              @default(PENDING)
+  organizationId  String?
+  organization    Organization?       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  batchId         String?
+  batch           Batch?              @relation(fields: [batchId], references: [id], onDelete: SetNull)
+  attempts        Attempt[]
+  requests        TestRequest[]
+  sessionId       String?
+  
+  // Parent - Student Linkage
+  parentLinks     ParentStudentLink[] @relation("ParentLink")
+  studentLinks    ParentStudentLink[] @relation("StudentLink")
+
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+}
+
+model ParentStudentLink {
+  id        String   @id @default(cuid())
+  parentId  String
+  parent    User     @relation("ParentLink", fields: [parentId], references: [id], onDelete: Cascade)
+  studentId String
+  student   User     @relation("StudentLink", fields: [studentId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([parentId, studentId])
+}
+
+model Batch {
+  id             String        @id @default(cuid())
+  name           String
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  users          User[]
+  tests          Test[]        @relation("BatchTests")
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@unique([name, organizationId])
+}
+
+model ExamTemplate {
+  id                 String        @id @default(cuid())
+  name               String        // e.g. "JEE Main CBT 2026", "NEET OMR Practice", "AFCAT Standard"
+  examCategory       String        // e.g. "JEE", "NEET", "GATE", "AFCAT", "SSC", "CUSTOM"
+  mode               ExamMode      @default(CBT)
+  totalDuration      Int           // total duration in minutes
+  isSectionalTiming  Boolean       @default(false)
+  hasNegativeMarking Boolean       @default(true)
+  config             String        // JSON configuration (sections, marking, cutoffs, proctoring rules, navigation)
+  organizationId     String?
+  organization       Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  tests              Test[]
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+}
+
+model Question {
+  id             String         @id @default(cuid())
+  text           String         // Rich text or markdown
+  options        String         // JSON string of Array of { id, text }
+  correctOption  String         // ID or answer string
+  explanation    String?
+  subject        String
+  chapter        String?
+  topic          String
+  subtopic       String?
+  difficulty     String         @default("MEDIUM") // EASY, MEDIUM, HARD
+  questionType   QuestionType   @default(SINGLE_CHOICE)
+  marks          Float          @default(1.0)
+  negativeMarks  Float          @default(0.0)
+  tags           String         // Comma-separated string
+  estimatedTime  Int            @default(60) // in seconds
+  examCategory   String?
+  year           Int?
+  language       String         @default("en")
+  sourceFile     String?        // Name of the source file
+  organizationId String?
+  organization   Organization?  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  tests          TestQuestion[]
+  answers        Answer[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+}
+
+model Test {
+  id             String         @id @default(cuid())
+  title          String
+  description    String?
+  duration       Int            // in minutes
+  totalMarks     Int
+  type           TestType       @default(PRACTICE)
+  mode           ExamMode       @default(CBT)
+  status         TestStatus     @default(DRAFT)
+  isPublished    Boolean        @default(false)
+  scheduledStart DateTime?
+  scheduledEnd   DateTime?
+  templateId     String?
+  template       ExamTemplate?  @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  organizationId String?
+  organization   Organization?  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  batches        Batch[]        @relation("BatchTests")
+  questions      TestQuestion[]
+  attempts       Attempt[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+}
+
+model TestQuestion {
+  id         String   @id @default(cuid())
+  testId     String
+  test       Test     @relation(fields: [testId], references: [id], onDelete: Cascade)
+  questionId String
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  order      Int      // To allow explicit ordering
+  section    String?  // Optional section grouping (e.g. Physics, General Awareness)
+  
+  @@unique([testId, questionId])
+}
+
+model Attempt {
+  id               String        @id @default(cuid())
+  userId           String
+  user             User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  testId           String
+  test             Test          @relation(fields: [testId], references: [id], onDelete: Cascade)
+  mode             ExamMode      @default(CBT)
+  status           AttemptStatus @default(IN_PROGRESS)
+  score            Float?
+  percentage       Float?
+  accuracy         Float?
+  attemptedCount   Int?          @default(0)
+  correctCount     Int?          @default(0)
+  incorrectCount   Int?          @default(0)
+  unattemptedCount Int?          @default(0)
+  rank             Int?
+  percentile       Float?
+  subjectScores    String?       // JSON string
+  chapterScores    String?       // JSON string
+  topicScores      String?       // JSON string
+  weakTopics       String?       // JSON string list of weak topics
+  strongTopics     String?       // JSON string list of strong topics
+  startTime        DateTime      @default(now())
+  endTime          DateTime?
+  timeRemaining    Int           // Seconds left
+  answers          Answer[]
+  violations       Violation[]
+  mentorComment    String?
+  isRetry          Boolean       @default(false)
+  parentAttemptId  String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+}
+
+model Answer {
+  id          String   @id @default(cuid())
+  attemptId   String
+  attempt     Attempt  @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  questionId  String
+  question    Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  selectedOpt String?  // Option ID or submitted answer value
+  isCorrect   Boolean?
+  timeSpent   Int      @default(0) // Seconds spent on this question
+  status      String   @default("UNANSWERED") // SAVED, MARKED_FOR_REVIEW, UNANSWERED
+  subject     String?
+  chapter     String?
+  topic       String?
+  updatedAt   DateTime @updatedAt
+
+  @@unique([attemptId, questionId])
+}
+
+model Violation {
+  id        String   @id @default(cuid())
+  attemptId String
+  attempt   Attempt  @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  type      String   // TAB_SWITCH, BLUR, COPY_PASTE, FULLSCREEN_EXIT
+  timestamp DateTime @default(now())
+}
+
+model TestRequest {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  count     Int      // 3-5
+  category  TestType @default(PRACTICE)
+  status    Status   @default(PENDING)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model NotificationLog {
+  id             String   @id @default(cuid())
+  recipientPhone String
+  type           String   // RESULT_NOTIFICATION, TEST_ASSIGNED, WEEKLY_REPORT
+  status         String   // SENT, FAILED, PENDING
+  payload        String   // JSON payload
+  reportUrl      String?
+  createdAt      DateTime @default(now())
+}
