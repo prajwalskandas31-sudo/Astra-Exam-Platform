@@ -1,6 +1,14 @@
 "use client";
 
 import { BarChart3, TrendingUp, Award, Users, ShieldCheck } from "lucide-react";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
+
+const data = [
+  { name: "Week 1", "Batch Alpha": 65, "Batch Beta": 55, "Institute Avg": 60 },
+  { name: "Week 2", "Batch Alpha": 68, "Batch Beta": 62, "Institute Avg": 65 },
+  { name: "Week 3", "Batch Alpha": 75, "Batch Beta": 66, "Institute Avg": 70 },
+  { name: "Week 4", "Batch Alpha": 82, "Batch Beta": 74, "Institute Avg": 78 },
+];
 
 export default function AdminAnalyticsPage() {
   return (
@@ -30,6 +38,31 @@ export default function AdminAnalyticsPage() {
         <div className="p-5 rounded-2xl border border-purple-500/30 bg-purple-500/10 backdrop-blur-md">
           <p className="text-xs font-semibold text-purple-400 uppercase tracking-wider">Exams Taken This Month</p>
           <p className="text-3xl font-black text-purple-300 mt-1">324</p>
+        </div>
+      </div>
+
+      {/* Trend Chart */}
+      <div className="bg-slate-900/60 border border-white/10 rounded-2xl p-6">
+        <h2 className="text-base font-bold text-white flex items-center gap-2 mb-6">
+          <TrendingUp className="w-5 h-5 text-emerald-400" />
+          Batch Performance Trends (Last 4 Weeks)
+        </h2>
+        <div className="h-[300px] w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={data} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
+              <XAxis dataKey="name" stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} />
+              <YAxis stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => `${value}%`} />
+              <Tooltip 
+                contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #1e293b', borderRadius: '8px' }}
+                itemStyle={{ color: '#f8fafc' }}
+              />
+              <Legend wrapperStyle={{ paddingTop: '20px' }} />
+              <Line type="monotone" dataKey="Batch Alpha" stroke="#8b5cf6" strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+              <Line type="monotone" dataKey="Batch Beta" stroke="#0ea5e9" strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+              <Line type="monotone" dataKey="Institute Avg" stroke="#10b981" strokeWidth={3} strokeDasharray="5 5" />
+            </LineChart>
+          </ResponsiveContainer>
         </div>
       </div>
 

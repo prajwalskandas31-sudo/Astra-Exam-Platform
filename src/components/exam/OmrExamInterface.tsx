@@ -113,7 +113,8 @@ export function OmrExamInterface({ testTitle, attemptId, onFinish }: OmrExamInte
                 return (
                   <div
                     key={q.id}
-                    className={`p-4 rounded-xl border transition ${selectedOpt ? 'bg-emerald-950/20 border-emerald-500/40' : 'bg-slate-800/40 border-slate-700/50'}`}
+                    className={`p-4 rounded-xl border transition-all animate-in fade-in zoom-in-95 duration-500 ${selectedOpt ? 'bg-emerald-950/20 border-emerald-500/40 shadow-[0_0_15px_rgba(16,185,129,0.1)]' : 'bg-slate-800/40 border-slate-700/50 hover:bg-slate-800/80 hover:border-slate-600'}`}
+                    style={{ animationDelay: `${(idx % 12) * 50}ms`, animationFillMode: 'both' }}
                   >
                     <div className="flex items-center justify-between mb-3">
                       <span className="text-sm font-bold text-slate-300">

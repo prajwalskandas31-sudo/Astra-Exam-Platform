@@ -2,6 +2,12 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { GoogleGenAI } from "@google/genai";
+
+// Initialize Gemini SDK
+// Note: Requires GEMINI_API_KEY environment variable
+const ai = new GoogleGenAI({});
+
 export async function POST(request: Request) {
   try {
     const session = await getServerSession(authOptions);
@@ -22,81 +28,82 @@ export async function POST(request: Request) {
     // Use eval('require') to bypass Next.js Webpack intercepting pdf-parse
     const pdfParse = eval('require')('pdf-parse');
 
-    // Parse Answer Key if provided
-    const answerKeyMap: Record<string, string> = {};
-    if (answerFile) {
-      const ansBuffer = Buffer.from(await answerFile.arrayBuffer());
-      const ansData = await pdfParse(ansBuffer);
-      
-      // Match "1 E", "41 A/C", etc.
-      // We'll capture the number and the letter(s)
-      const ansRegex = /(\d+)\s+([A-E](?:\/[A-E])?)/g;
-      let match;
-      while ((match = ansRegex.exec(ansData.text)) !== null) {
-        answerKeyMap[match[1]] = match[2];
-      }
-    }
-
     // Parse Questions PDF
     const buffer = Buffer.from(await file.arrayBuffer());
     const data = await pdfParse(buffer);
     const text = data.text;
-
-    // --- DETERMINISTIC REGEX PARSER ---
-    const questions: any[] = [];
     
-    // Split the text by question numbers: "1. ", "2. ", "180. "
-    const questionBlocks = text.split(/(?:^|\n)\s*(\d+)\.\s+/g);
-    
-    for (let i = 1; i < questionBlocks.length; i += 2) {
-      const qNumber = questionBlocks[i];
-      let qContent = questionBlocks[i + 1];
-
-      // Clean up headers/footers in the block
-      qContent = qContent.replace(/Dr\. C AK Consultancy Services[\s\S]*?Page \d+ of \d+/g, "").trim();
-
-      const optionMatch = qContent.match(/([A-Z])\.\s/);
-      if (!optionMatch) continue; // Skip if no options found
-
-      const questionText = qContent.substring(0, optionMatch.index).replace(/\n/g, " ").trim();
-      
-      const optionsText = qContent.substring(optionMatch.index!);
-      const optionChunks = optionsText.split(/(?:^|\n)\s*([A-Z])\.\s+/g);
-      
-      const options = [];
-      for (let j = 1; j < optionChunks.length; j += 2) {
-        options.push({
-          id: optionChunks[j],
-          text: optionChunks[j+1].replace(/\n/g, " ").trim()
-        });
-      }
-
-      // Assign the correct option from the answer key, or default to "A" if missing
-      const correctOpt = answerKeyMap[qNumber] || "A";
-
-      if (questionText && options.length >= 2) {
-        questions.push({
-          text: questionText,
-          options: JSON.stringify(options),
-          correctOption: correctOpt, 
-          subject: "General",
-          topic: "Mixed",
-          difficulty: "MEDIUM",
-          tags: "plab1",
-          estimatedTime: 60,
-          sourceFile: questionSetName || file.name,
-          status: "DRAFT"
-        });
-      }
+    let answerText = "";
+    if (answerFile) {
+      const ansBuffer = Buffer.from(await answerFile.arrayBuffer());
+      const ansData = await pdfParse(ansBuffer);
+      answerText = ansData.text;
     }
 
-    if (questions.length === 0) {
-      return NextResponse.json({ error: "Could not parse any questions from the PDF format." }, { status: 400 });
+    // --- AI-POWERED EXTRACTION USING GEMINI ---
+    const prompt = `
+      You are an expert educational data extractor.
+      Extract multiple-choice questions from the following text extracted from a PDF.
+      For each question, extract the question text and all options.
+      If an Answer Key text is provided below, map the correct option for each question. If not, default to "A".
+      
+      Output the data STRICTLY as a JSON array of objects with the following schema:
+      [
+        {
+          "qNumber": "The original question number as a string (e.g., '1')",
+          "text": "The question text",
+          "options": [
+            { "id": "A", "text": "Option A text" },
+            { "id": "B", "text": "Option B text" }
+          ],
+          "correctOption": "A, B, C, D, or E"
+        }
+      ]
+      
+      Questions Text:
+      ${text.substring(0, 30000)} // Limiting to avoid token overflow in extremely large documents
+
+      Answer Key Text (if any):
+      ${answerText.substring(0, 10000)}
+    `;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+      }
+    });
+
+    const resultText = response.text || "[]";
+    let extractedData = [];
+    try {
+      extractedData = JSON.parse(resultText);
+    } catch (e) {
+      console.error("Failed to parse AI JSON response:", resultText);
+      return NextResponse.json({ error: "AI failed to generate valid structured data." }, { status: 500 });
     }
+
+    if (!Array.isArray(extractedData) || extractedData.length === 0) {
+      return NextResponse.json({ error: "Could not parse any questions using AI." }, { status: 400 });
+    }
+
+    const questionsToInsert = extractedData.map((q: any) => ({
+      text: q.text,
+      options: JSON.stringify(q.options),
+      correctOption: q.correctOption || "A", 
+      subject: "General",
+      topic: "Mixed",
+      difficulty: "MEDIUM",
+      tags: "ai-extracted",
+      estimatedTime: 60,
+      sourceFile: questionSetName || file.name,
+      status: "DRAFT"
+    }));
 
     // Insert into DB
     const createdCount = await prisma.$transaction(
-      questions.map(q => prisma.question.create({ data: q }))
+      questionsToInsert.map(q => prisma.question.create({ data: q }))
     );
 
     return NextResponse.json({ success: true, count: createdCount.length });
@@ -105,5 +112,3 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Internal Error" }, { status: 500 });
   }
 }
-
-
