@@ -34,6 +34,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         correctOption: correctOption !== undefined ? correctOption : existing.correctOption,
         marks: marks !== undefined ? Number(marks) : existing.marks,
         negativeMarks: negativeMarks !== undefined ? Number(negativeMarks) : existing.negativeMarks,
+        // @ts-ignore
         status: status !== undefined ? status : existing.status,
         difficulty: difficulty !== undefined ? difficulty : existing.difficulty,
         tags: tags !== undefined ? tags : existing.tags
