@@ -19,12 +19,12 @@ test.describe('End-to-End Pipeline Tests', () => {
       await nameInput.fill('E2E Test Student');
     }
     
-    const emailInput = page.getByLabel(/email/i).first();
+    const emailInput = page.locator('input[type="email"]').first();
     if (await emailInput.isVisible()) {
       await emailInput.fill(randomEmail);
     }
     
-    const passInput = page.getByLabel(/password/i).first();
+    const passInput = page.locator('input[type="password"]').first();
     if (await passInput.isVisible()) {
       await passInput.fill(password);
     }
@@ -40,12 +40,12 @@ test.describe('End-to-End Pipeline Tests', () => {
 
     // 2. Login Flow (if not auto-logged in)
     if (page.url().includes('login')) {
-      const loginEmail = page.getByLabel(/email/i).first();
-      const loginPass = page.getByLabel(/password/i).first();
+      const loginEmail = page.locator('input[type="email"]').first();
+      const loginPass = page.locator('input[type="password"]').first();
       if (await loginEmail.isVisible() && await loginPass.isVisible()) {
         await loginEmail.fill(randomEmail);
         await loginPass.fill(password);
-        await page.getByRole('button', { name: /login|sign in/i }).click();
+        await page.getByRole('button', { name: 'Sign In to Dashboard' }).click();
         await page.waitForURL(/.*dashboard.*/, { timeout: 10000 }).catch(() => {});
       }
     }
@@ -67,11 +67,11 @@ test.describe('End-to-End Pipeline Tests', () => {
     const adminEmail = 'admin@astra.local';
     const adminPass = 'AdminPass123!';
     
-    const emailInput = page.getByLabel(/email/i).first();
+    const emailInput = page.locator('input[type="email"]').first();
     if (await emailInput.isVisible()) {
       await emailInput.fill(adminEmail);
-      await page.getByLabel(/password/i).first().fill(adminPass);
-      await page.getByRole('button', { name: /login|sign in/i }).click();
+      await page.locator('input[type="password"]').first().fill(adminPass);
+      await page.getByRole('button', { name: 'Sign In to Dashboard' }).click();
       
       // Wait for auth to process
       await page.waitForTimeout(2000);
