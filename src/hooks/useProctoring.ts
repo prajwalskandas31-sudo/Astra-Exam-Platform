@@ -1,12 +1,40 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useExamStore } from "@/store/examStore";
 import { toast } from "sonner";
 
 export function useProctoring() {
-  const { logViolation, violations, submitExam, attemptId } = useExamStore();
+  const { logViolation, submitExam, attemptId } = useExamStore();
   const [isFullscreen, setIsFullscreen] = useState(false);
+
+  const handleViolation = useCallback(async (reason: string) => {
+    logViolation();
+    
+    // Attempt to log to backend
+    if (attemptId) {
+      try {
+        await fetch(`/api/attempts/${attemptId}/violation`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ reason }),
+        });
+      } catch (err) {
+        console.error("Failed to log violation to backend", err);
+      }
+    }
+
+    const currentViolations = useExamStore.getState().violations;
+    
+    if (currentViolations === 1) {
+      toast.warning(`Warning: ${reason}`, { duration: 5000 });
+    } else if (currentViolations === 2) {
+      toast.error(`Final Warning: ${reason}. Next violation will auto-submit the exam!`, { duration: 8000 });
+    } else if (currentViolations >= 3) {
+      toast.error(`Exam auto-submitted due to repeated violations.`);
+      submitExam(); // Trigger auto-submission
+    }
+  }, [logViolation, attemptId, submitExam]);
 
   useEffect(() => {
     const handleVisibilityChange = () => {
@@ -59,35 +87,7 @@ export function useProctoring() {
       document.removeEventListener("keydown", handleKeyDown);
       document.removeEventListener("fullscreenchange", handleFullscreenChange);
     };
-  }, []);
-
-  const handleViolation = async (reason: string) => {
-    logViolation();
-    
-    // Attempt to log to backend
-    if (attemptId) {
-      try {
-        await fetch(`/api/attempts/${attemptId}/violation`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ reason }),
-        });
-      } catch (err) {
-        console.error("Failed to log violation to backend", err);
-      }
-    }
-
-    const currentViolations = useExamStore.getState().violations;
-    
-    if (currentViolations === 1) {
-      toast.warning(`Warning: ${reason}`, { duration: 5000 });
-    } else if (currentViolations === 2) {
-      toast.error(`Final Warning: ${reason}. Next violation will auto-submit the exam!`, { duration: 8000 });
-    } else if (currentViolations >= 3) {
-      toast.error(`Exam auto-submitted due to repeated violations.`);
-      submitExam(); // Trigger auto-submission
-    }
-  };
+  }, [handleViolation]);
 
   const enterFullscreen = () => {
     if (document.documentElement.requestFullscreen) {

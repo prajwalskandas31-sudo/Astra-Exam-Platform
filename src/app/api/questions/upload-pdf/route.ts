@@ -84,7 +84,8 @@ export async function POST(request: Request) {
           difficulty: "MEDIUM",
           tags: "plab1",
           estimatedTime: 60,
-          sourceFile: questionSetName || file.name
+          sourceFile: questionSetName || file.name,
+          status: "DRAFT"
         });
       }
     }

@@ -12,6 +12,9 @@ export function QuestionBank() {
   const [aFile, setAFile] = useState<File | null>(null);
   const [setName, setSetName] = useState("");
 
+  const [editingQuestion, setEditingQuestion] = useState<any>(null);
+  const [editForm, setEditForm] = useState({ text: "", correctOption: "", status: "DRAFT" });
+
   const fetchQuestions = () => {
     fetch("/api/questions")
       .then((res) => res.json())
@@ -19,6 +22,25 @@ export function QuestionBank() {
         if (Array.isArray(data)) setQuestions(data);
       })
       .catch(() => {});
+  };
+
+  const handleEditSubmit = async () => {
+    if (!editingQuestion) return;
+    try {
+      const res = await fetch(`/api/questions/${editingQuestion.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editForm),
+      });
+      if (res.ok) {
+        fetchQuestions();
+        setEditingQuestion(null);
+      } else {
+        alert("Failed to update question.");
+      }
+    } catch (err) {
+      alert("Error updating question.");
+    }
   };
 
   useEffect(() => {
@@ -143,19 +165,83 @@ export function QuestionBank() {
       ) : (
         <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2 custom-scrollbar">
           {questions.map((q) => (
-            <div key={q.id} className="p-4 border border-white/10 rounded-xl bg-white/[0.02] hover:bg-white/[0.04] transition-colors">
-              <p className="font-medium text-slate-200 line-clamp-2">{q.text}</p>
+            <div key={q.id} className="p-4 border border-white/10 rounded-xl bg-white/[0.02] hover:bg-white/[0.04] transition-colors relative">
+              <p className="font-medium text-slate-200 line-clamp-2 pr-20">{q.text}</p>
+              <Button 
+                size="sm" 
+                variant="outline" 
+                onClick={() => {
+                  setEditingQuestion(q);
+                  setEditForm({ text: q.text, correctOption: q.correctOption, status: q.status || "PUBLISHED" });
+                }}
+                className="absolute top-4 right-4 h-7 text-xs bg-slate-800 border-slate-700 hover:bg-slate-700"
+              >
+                Edit
+              </Button>
               <div className="flex items-center gap-2 mt-3">
                 <span className="text-[10px] uppercase font-bold tracking-wider bg-blue-500/20 text-blue-300 px-2.5 py-1 rounded-md">{q.subject}</span>
                 <span className="text-[10px] uppercase font-bold tracking-wider bg-slate-700/50 text-slate-300 px-2.5 py-1 rounded-md">{q.difficulty}</span>
                 {q.sourceFile && (
-                  <span className="text-[10px] uppercase tracking-wider bg-indigo-500/10 text-indigo-300 px-2 py-1 rounded-md border border-indigo-500/20 ml-auto truncate max-w-[200px]">
+                  <span className="text-[10px] uppercase tracking-wider bg-indigo-500/10 text-indigo-300 px-2 py-1 rounded-md border border-indigo-500/20 ml-auto truncate max-w-[150px]">
                     📄 {q.sourceFile}
+                  </span>
+                )}
+                {q.status === "DRAFT" ? (
+                  <span className="text-[10px] uppercase tracking-wider bg-amber-500/20 text-amber-300 px-2 py-1 rounded-md border border-amber-500/20 ml-2">
+                    DRAFT
+                  </span>
+                ) : (
+                  <span className="text-[10px] uppercase tracking-wider bg-emerald-500/20 text-emerald-300 px-2 py-1 rounded-md border border-emerald-500/20 ml-2">
+                    PUBLISHED
                   </span>
                 )}
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {editingQuestion && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-slate-900 border border-slate-700 p-6 rounded-2xl shadow-2xl w-[500px]">
+            <h3 className="text-lg font-bold mb-4 text-white">Edit Question</h3>
+            <div className="space-y-4 mb-6">
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-1">Question Text</label>
+                <textarea 
+                  value={editForm.text} 
+                  onChange={e => setEditForm({...editForm, text: e.target.value})} 
+                  className="w-full border border-slate-700 bg-slate-800/50 text-slate-200 p-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[100px]" 
+                />
+              </div>
+              <div className="flex gap-4">
+                <div className="flex-1">
+                  <label className="block text-sm font-medium text-slate-300 mb-1">Correct Option</label>
+                  <input 
+                    type="text" 
+                    value={editForm.correctOption} 
+                    onChange={e => setEditForm({...editForm, correctOption: e.target.value})} 
+                    className="w-full border border-slate-700 bg-slate-800/50 text-slate-200 p-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500" 
+                  />
+                </div>
+                <div className="flex-1">
+                  <label className="block text-sm font-medium text-slate-300 mb-1">Status</label>
+                  <select 
+                    value={editForm.status} 
+                    onChange={e => setEditForm({...editForm, status: e.target.value})} 
+                    className="w-full border border-slate-700 bg-slate-800/50 text-slate-200 p-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="DRAFT">DRAFT</option>
+                    <option value="PUBLISHED">PUBLISHED</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3">
+              <Button variant="outline" onClick={() => setEditingQuestion(null)} className="border-slate-700 bg-transparent text-slate-300 hover:bg-slate-800 hover:text-white">Cancel</Button>
+              <Button onClick={handleEditSubmit} className="bg-blue-600 hover:bg-blue-500 text-white">Save Changes</Button>
+            </div>
+          </div>
         </div>
       )}
     </div>

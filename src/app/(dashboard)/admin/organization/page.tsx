@@ -15,6 +15,7 @@ export default function OrganizationBrandingPage() {
   const [contactPhone, setContactPhone] = useState("+91 98765 43210");
   const [customDomain, setCustomDomain] = useState("tests.apexacademy.in");
   const [academicYear, setAcademicYear] = useState("2026-2027");
+  const [offeredCategories, setOfferedCategories] = useState<string[]>(["JEE", "NEET"]);
   const [saving, setSaving] = useState(false);
 
   const handleSave = (e: React.FormEvent) => {
@@ -142,6 +143,35 @@ export default function OrganizationBrandingPage() {
               onChange={(e) => setAcademicYear(e.target.value)}
               className="w-full p-3 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-blue-500 outline-none"
             />
+          </div>
+
+          <div className="space-y-1.5 md:col-span-2 mt-4">
+            <label className="text-xs font-bold text-slate-300 uppercase tracking-wider block mb-2">Offered Exam Categories</label>
+            <p className="text-xs text-slate-400 mb-3">Select the specific examinations offered to your students. This controls what they see on their dashboard.</p>
+            <div className="flex flex-wrap gap-3">
+              {["JEE", "NEET", "GATE", "AFCAT", "SSC", "CUSTOM"].map(cat => (
+                <label key={cat} className={`flex items-center gap-2 px-4 py-2 rounded-xl border cursor-pointer transition-all ${
+                  offeredCategories.includes(cat) 
+                    ? "bg-blue-600/20 border-blue-500 text-blue-300" 
+                    : "bg-slate-900/50 border-white/10 text-slate-400 hover:bg-slate-800"
+                }`}>
+                  <input 
+                    type="checkbox"
+                    className="hidden"
+                    checked={offeredCategories.includes(cat)}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setOfferedCategories([...offeredCategories, cat]);
+                      } else {
+                        setOfferedCategories(offeredCategories.filter(c => c !== cat));
+                      }
+                    }}
+                  />
+                  <CheckCircle2 className={`w-4 h-4 ${offeredCategories.includes(cat) ? "opacity-100" : "opacity-0 hidden"}`} />
+                  <span className="text-sm font-semibold">{cat}</span>
+                </label>
+              ))}
+            </div>
           </div>
 
         </div>

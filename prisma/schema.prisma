@@ -69,6 +69,7 @@ model Organization {
   academicYear    String?        @default("2026-2027")
   customDomain    String?        @unique
   whatsappConfig  String?        // JSON configuration for notification provider
+  offeredCategories String?      // JSON Array of strings (e.g. '["AFCAT", "GATE"]')
   users           User[]
   batches         Batch[]
   tests           Test[]
@@ -162,6 +163,7 @@ model Question {
   year           Int?
   language       String         @default("en")
   sourceFile     String?        // Name of the source file
+  status         String         @default("PUBLISHED") // DRAFT, PUBLISHED
   organizationId String?
   organization   Organization?  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   tests          TestQuestion[]

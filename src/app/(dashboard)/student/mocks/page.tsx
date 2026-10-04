@@ -25,6 +25,7 @@ export default function MockTestsPage() {
   const [isWithinWindow, setIsWithinWindow] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [activeFilter, setActiveFilter] = useState<string>("ALL");
+  const [viewMode, setViewMode] = useState<"COHORT" | "EXPLORE">("COHORT");
   
   // Registered Exam Streams state
   const [registeredExams, setRegisteredExams] = useState<string[]>([
@@ -169,7 +170,28 @@ export default function MockTestsPage() {
 
         {/* Actions & Live Status */}
         <div className="relative z-10 flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0 w-full md:w-auto">
-          
+          <div className="flex bg-slate-900/60 p-1 rounded-xl border border-white/10">
+            <button
+              onClick={() => setViewMode("COHORT")}
+              className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+                viewMode === "COHORT"
+                  ? "bg-blue-600 text-white shadow-lg"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              My Cohort Exams
+            </button>
+            <button
+              onClick={() => setViewMode("EXPLORE")}
+              className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+                viewMode === "EXPLORE"
+                  ? "bg-slate-700 text-white shadow-lg"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              Explore All
+            </button>
+          </div>
           <Button
             onClick={() => setShowRemoteRequestModal(true)}
             className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold h-11 px-5 rounded-2xl shadow-lg shadow-emerald-600/30 text-xs flex items-center justify-center gap-2"

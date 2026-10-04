@@ -25,7 +25,7 @@ export const authOptions: NextAuthOptions = {
           user = await prisma.user.findUnique({
             where: { email: emailLower }
           });
-        } catch (e) {
+        } catch {
           // DB uninitialized or serverless environment without active DB connection
         }
 
@@ -33,7 +33,7 @@ export const authOptions: NextAuthOptions = {
           let isPasswordValid = false;
           try {
             isPasswordValid = await bcrypt.compare(password, user.password);
-          } catch (e) {}
+          } catch {}
 
           // Fallback check for prototype password
           if (!isPasswordValid && password === "password123") {
@@ -47,7 +47,7 @@ export const authOptions: NextAuthOptions = {
                 where: { id: user.id },
                 data: { sessionId }
               });
-            } catch (e) {}
+            } catch {}
 
             return {
               id: user.id,
