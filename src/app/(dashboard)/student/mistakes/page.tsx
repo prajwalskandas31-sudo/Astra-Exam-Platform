@@ -1,147 +1,133 @@
 "use client";
 
-import { useState } from "react";
-import { FileSpreadsheet, AlertCircle, CheckCircle2, XCircle, RefreshCw, Filter, ArrowUpDown } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { useMemo, useState } from "react";
+import Link from "next/link";
+import { CheckCircle2, ChevronDown, FileSpreadsheet, MinusCircle, XCircle } from "lucide-react";
+import { Badge, Btn, Card, EmptyState, ErrorState, PageHeader, PageLoader, Tabs, formatDate, inputClass } from "@/components/ui/kit";
+import { useApi } from "@/lib/fetcher";
+import { cn } from "@/lib/utils";
+
+interface Mistake {
+  answerId: string;
+  attemptId: string;
+  testTitle: string;
+  date: string;
+  outcome: "incorrect" | "unattempted";
+  selected: string | null;
+  question: {
+    id: string; text: string; options: { id: string; text: string }[]; correctOption: string; explanation: string | null;
+    subject: string; chapter: string | null; topic: string; questionType: string;
+  };
+}
+
+type GroupBy = "test" | "chapter";
+type Kind = "all" | "incorrect" | "unattempted";
 
 export default function MistakesPage() {
-  const [mistakeView, setMistakeView] = useState<"test" | "chapter">("test");
-  const [filterPeriod, setFilterPeriod] = useState<"all" | "last3" | "last5" | "last30">("all");
+  const { data, error, loading, reload } = useApi<{ mistakes: Mistake[] }>("/api/student/insights");
+  const [groupBy, setGroupBy] = useState<GroupBy>("test");
+  const [kind, setKind] = useState<Kind>("all");
+  const [subject, setSubject] = useState("ALL");
+  const [open, setOpen] = useState<string | null>(null);
+
+  const mistakes = data?.mistakes ?? [];
+  const subjects = useMemo(() => Array.from(new Set(mistakes.map((m) => m.question.subject))), [mistakes]);
+  const filtered = mistakes.filter((m) => (kind === "all" || m.outcome === kind) && (subject === "ALL" || m.question.subject === subject));
+
+  const groups = useMemo(() => {
+    const map = new Map<string, Mistake[]>();
+    for (const m of filtered) {
+      const key = groupBy === "test" ? `${m.testTitle} · ${formatDate(m.date)}` : m.question.chapter || m.question.topic || "General";
+      map.set(key, [...(map.get(key) ?? []), m]);
+    }
+    return [...map.entries()];
+  }, [filtered, groupBy]);
+
+  if (loading) return <PageLoader label="Loading your mistake notebook…" />;
+  if (error) return <ErrorState message={error} onRetry={reload} />;
 
   return (
-    <div className="space-y-8 max-w-7xl mx-auto pb-16">
-      
-      <div>
-        <div className="flex items-center gap-2">
-          <h1 className="text-3xl font-black text-white tracking-tight">Mistakes</h1>
-          <span className="px-2 py-0.5 text-[10px] font-bold bg-gradient-to-r from-orange-500 to-amber-500 text-slate-950 rounded uppercase tracking-wider">
-            NEW
-          </span>
-        </div>
-        <p className="text-sm text-slate-400 mt-1">
-          Revisit questions which you either attempted incorrectly or didn't attempt in the paper
-        </p>
-      </div>
+    <div className="space-y-6">
+      <PageHeader title="Mistakes" description="Every question you got wrong or skipped, with the correct answer and explanation." />
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-        
-        {/* Left Sub Tabs */}
-        <div className="space-y-2 bg-slate-900/60 p-4 rounded-2xl border border-white/10 h-fit">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 px-3 py-1">MY MISTAKES</p>
-          {[
-            { id: "test", label: "Test-wise", badge: "NEW" },
-            { id: "chapter", label: "Chapter-wise" },
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setMistakeView(tab.id as any)}
-              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                mistakeView === tab.id
-                  ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30 shadow-md'
-                  : 'text-slate-400 hover:bg-white/5 hover:text-white border border-transparent'
-              }`}
-            >
-              <span>{tab.label}</span>
-              {tab.badge && (
-                <span className="px-1.5 py-0.5 text-[9px] font-bold bg-orange-500 text-slate-950 rounded uppercase">
-                  {tab.badge}
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
+      {mistakes.length === 0 ? (
+        <Card><EmptyState icon={FileSpreadsheet} title="No mistakes recorded" description="Questions you answer incorrectly or skip in submitted tests will be collected here for revision." action={<Link href="/student/mocks"><Btn>Take a test</Btn></Link>} /></Card>
+      ) : (
+        <>
+          <div className="flex flex-wrap items-center gap-3">
+            <Tabs<GroupBy> value={groupBy} onChange={setGroupBy} items={[{ id: "test", label: "By test" }, { id: "chapter", label: "By chapter" }]} />
+            <Tabs<Kind>
+              value={kind}
+              onChange={setKind}
+              items={[
+                { id: "all", label: "All", count: mistakes.length },
+                { id: "incorrect", label: "Wrong", count: mistakes.filter((m) => m.outcome === "incorrect").length },
+                { id: "unattempted", label: "Skipped", count: mistakes.filter((m) => m.outcome === "unattempted").length },
+              ]}
+            />
+            {subjects.length > 1 && (
+              <select value={subject} onChange={(e) => setSubject(e.target.value)} className={`${inputClass} w-auto`} aria-label="Subject">
+                <option value="ALL">All subjects</option>
+                {subjects.map((s) => <option key={s}>{s}</option>)}
+              </select>
+            )}
+          </div>
 
-        {/* Right Content */}
-        <div className="lg:col-span-3 space-y-6">
-          
-          {/* Filters Bar */}
-          <div className="flex items-center gap-2 bg-slate-900/60 p-4 rounded-2xl border border-white/10">
-            <span className="text-xs font-bold text-slate-400 mr-2">Test Type:</span>
-            {[
-              { id: "all", label: "All" },
-              { id: "last3", label: "Last 3 Tests" },
-              { id: "last5", label: "Last 5 Tests" },
-              { id: "last30", label: "Attempted in last 30 days" },
-            ].map((f) => (
-              <button
-                key={f.id}
-                onClick={() => setFilterPeriod(f.id as any)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                  filterPeriod === f.id
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-white/5 text-slate-400 hover:text-white'
-                }`}
-              >
-                {f.label}
-              </button>
+          <div className="space-y-6">
+            {groups.map(([title, items]) => (
+              <section key={title} className="space-y-2">
+                <h2 className="text-sm font-semibold text-slate-300">{title} <span className="font-normal text-slate-500">({items.length})</span></h2>
+                <Card className="divide-y divide-white/[0.05]">
+                  {items.map((m) => {
+                    const isOpen = open === m.answerId;
+                    const correct = new Set(m.question.correctOption.split(",").map((s) => s.trim().toUpperCase()));
+                    const picked = new Set((m.selected || "").split(",").map((s) => s.trim().toUpperCase()).filter(Boolean));
+                    return (
+                      <div key={m.answerId}>
+                        <button onClick={() => setOpen(isOpen ? null : m.answerId)} className="flex w-full items-start gap-3 px-5 py-4 text-left hover:bg-white/[0.02]" aria-expanded={isOpen}>
+                          {m.outcome === "incorrect" ? <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-rose-400" /> : <MinusCircle className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />}
+                          <div className="min-w-0 flex-1">
+                            <p className={cn("text-sm text-slate-200", !isOpen && "line-clamp-2")}>{m.question.text}</p>
+                            <div className="mt-1.5 flex flex-wrap gap-1.5">
+                              <Badge>{m.question.subject}</Badge>
+                              <Badge>{m.question.topic}</Badge>
+                            </div>
+                          </div>
+                          <ChevronDown className={cn("mt-0.5 h-4 w-4 shrink-0 text-slate-500 transition", isOpen && "rotate-180")} />
+                        </button>
+                        {isOpen && (
+                          <div className="space-y-3 px-5 pb-5 pl-12">
+                            {m.question.questionType === "NUMERICAL" ? (
+                              <p className="text-sm text-slate-300">
+                                Your answer: <span className="font-mono text-rose-300">{m.selected || "—"}</span> · Correct: <span className="font-mono text-emerald-300">{m.question.correctOption}</span>
+                              </p>
+                            ) : (
+                              <div className="grid gap-2 md:grid-cols-2">
+                                {m.question.options.map((o) => {
+                                  const isC = correct.has(o.id.toUpperCase());
+                                  const isP = picked.has(o.id.toUpperCase());
+                                  return (
+                                    <div key={o.id} className={cn("flex gap-2 rounded-lg border p-2.5 text-sm", isC ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-200" : isP ? "border-rose-500/40 bg-rose-500/10 text-rose-200" : "border-white/[0.06] text-slate-400")}>
+                                      <span className="font-semibold">{o.id}.</span><span className="flex-1">{o.text}</span>
+                                      {isC && <CheckCircle2 className="h-4 w-4 shrink-0" />}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                            {m.question.explanation && <p className="rounded-lg bg-black/20 p-3 text-sm leading-relaxed text-slate-300">{m.question.explanation}</p>}
+                            <Link href={`/exam/${m.attemptId}/results`} className="inline-block text-xs font-semibold text-blue-400 hover:text-blue-300">Open full test review →</Link>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </Card>
+              </section>
             ))}
           </div>
-
-          {/* Overview Graph Box */}
-          <div className="bg-slate-900/60 border border-white/10 rounded-2xl p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-base font-bold text-white">Your Mistakes Overview</h3>
-                <p className="text-xs text-slate-400 mt-0.5">This graph shows how you performed through different tests you attempted</p>
-              </div>
-              <div className="flex items-center gap-4 text-xs font-semibold">
-                <span className="flex items-center gap-1.5 text-rose-400">
-                  <span className="w-2.5 h-2.5 rounded-full bg-rose-500" />
-                  Incorrect Qs
-                </span>
-                <span className="flex items-center gap-1.5 text-emerald-400">
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
-                  Correct Qs
-                </span>
-                <span className="flex items-center gap-1.5 text-slate-400">
-                  <span className="w-2.5 h-2.5 rounded-full bg-slate-500" />
-                  Not attempted Qs
-                </span>
-              </div>
-            </div>
-
-            <div className="py-12 text-center text-xs text-slate-500 bg-black/20 rounded-xl border border-white/5">
-              No data available yet. Attempt tests to start tracking mistakes.
-            </div>
-          </div>
-
-          {/* Test-wise Mistakes Table */}
-          <div className="bg-slate-900/60 border border-white/10 rounded-2xl p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-base font-bold text-white">Test-wise Mistakes</h3>
-              <button className="flex items-center gap-1 text-xs text-slate-400 hover:text-white">
-                <ArrowUpDown className="w-3.5 h-3.5" />
-                Sort By
-              </button>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs text-slate-300">
-                <thead className="text-[10px] text-slate-400 uppercase bg-black/40 border-b border-white/10">
-                  <tr>
-                    <th className="p-3">Test name</th>
-                    <th className="p-3 text-blue-400">Accuracy Trend</th>
-                    <th className="p-3 text-rose-400">Attempted Wrong</th>
-                    <th className="p-3 text-slate-400">Not Attempted</th>
-                    <th className="p-3 text-emerald-400">Attempted Correct</th>
-                    <th className="p-3 text-slate-300">Total Questions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/5">
-                  <tr>
-                    <td colSpan={6} className="p-8 text-center text-slate-500">
-                      No test mistakes recorded. Keep taking tests to generate error notebook reviews.
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-        </div>
-
-      </div>
-
+        </>
+      )}
     </div>
   );
 }

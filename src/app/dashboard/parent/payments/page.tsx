@@ -86,6 +86,9 @@ export default function ParentPaymentsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/10 pb-6">
         <div>
           <h1 className="text-3xl font-black text-white tracking-tight">Fee Payments & Financial Oversight</h1>
+          <p className="mt-2 inline-block rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-200">
+            Demo mode — invoices are sample data and no payment gateway is connected, so no money is charged.
+          </p>
           <p className="text-sm text-slate-400 mt-1">
             Track tuition fee balances, upcoming due dates, payment receipts, and pay online securely.
           </p>

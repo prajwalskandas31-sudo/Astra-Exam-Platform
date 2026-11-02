@@ -1,14 +1,11 @@
-import { DashboardOverview } from "@/components/mentor/DashboardOverview";
+import { PageHeader } from "@/components/ui/kit";
+import { StaffOverview } from "@/components/staff/StaffOverview";
 
 export default function MentorDashboard() {
   return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight text-white">Mentor Dashboard</h1>
-        <p className="text-slate-400 mt-1">Platform overview and student performance tracking.</p>
-      </div>
-
-      <DashboardOverview />
+    <div className="space-y-6">
+      <PageHeader title="Faculty Dashboard" description="Student performance, pending work and test activity at a glance." />
+      <StaffOverview basePath="/mentor" isAdmin={false} />
     </div>
   );
 }

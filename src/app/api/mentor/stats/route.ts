@@ -1,33 +1,25 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { requireRole, tenantOrGlobalWhere, tenantWhere } from "@/lib/api";
+import { STAFF_ROLES } from "@/lib/roles";
 
 export async function GET() {
   try {
-    const session = await getServerSession(authOptions);
+    const { session, error } = await requireRole(STAFF_ROLES);
+    if (error) return error;
+    const org = tenantWhere(session);
 
-    if (!session || (session.user.role !== "ADMIN" && session.user.role !== "MENTOR")) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const [totalStudents, totalQuestions, totalTests, totalAttempts] = await Promise.all([
-      prisma.user.count({ where: { role: 'STUDENT' } }),
-      prisma.question.count(),
-      prisma.test.count(),
-      prisma.attempt.count({ where: { status: 'COMPLETED' } })
+    const [totalStudents, totalQuestions, totalTests, totalAttempts, pendingRequests] = await Promise.all([
+      prisma.user.count({ where: { role: "STUDENT", ...org } }),
+      prisma.question.count({ where: tenantOrGlobalWhere(session) }),
+      prisma.test.count({ where: { ownerId: null, ...tenantOrGlobalWhere(session) } }),
+      prisma.attempt.count({ where: { status: { in: ["COMPLETED", "AUTO_SUBMITTED"] }, user: org } }),
+      prisma.testRequest.count({ where: { status: "PENDING", user: org } })
     ]);
 
-    return NextResponse.json({
-      totalStudents,
-      totalQuestions,
-      totalTests,
-      totalAttempts
-    });
+    return NextResponse.json({ totalStudents, totalQuestions, totalTests, totalAttempts, pendingRequests });
   } catch (error) {
     console.error("[MENTOR_STATS_GET]", error);
     return NextResponse.json({ error: "Internal Error" }, { status: 500 });
   }
 }
-
-

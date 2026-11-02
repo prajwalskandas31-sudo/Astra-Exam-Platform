@@ -49,24 +49,18 @@ export async function GET() {
       }
     ];
 
-    const previousRequests = [
-      {
-        id: "REQ-901",
-        examCategory: "AFCAT",
-        testCount: 5,
-        notes: "Requested additional 5 mock tests for AFCAT General Awareness & Reasoning focus.",
-        status: "APPROVED",
-        createdAt: "2026-09-28"
-      },
-      {
-        id: "REQ-902",
-        examCategory: "JEE",
-        testCount: 3,
-        notes: "Requesting extra remote proctored test before Sunday full mock.",
-        status: "PENDING",
-        createdAt: "2026-10-01"
-      }
-    ];
+    const previousRequests = (await prisma.testRequest.findMany({
+      where: { userId: session.user.id },
+      orderBy: { createdAt: "desc" },
+      take: 20
+    })).map((r) => ({
+      id: r.id,
+      examCategory: r.examCategory || "General",
+      testCount: r.count,
+      notes: r.notes || "",
+      status: r.status,
+      createdAt: r.createdAt
+    }));
 
     return NextResponse.json({ mockPackages, previousRequests });
   } catch (error) {
@@ -82,13 +76,24 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { examCategory = "JEE", testCount = 5, notes = "", packageId = null } = await req.json();
+    const { examCategory = null, testCount = 5, notes = "", packageId = null } = await req.json();
+    const count = Number(testCount);
+    if (!Number.isInteger(count) || count < 1 || count > 50) {
+      return NextResponse.json({ error: "Choose between 1 and 50 tests" }, { status: 400 });
+    }
+
+    const pending = await prisma.testRequest.findFirst({ where: { userId: session.user.id, status: "PENDING" } });
+    if (pending) {
+      return NextResponse.json({ error: "You already have a pending request. The institute will review it shortly." }, { status: 409 });
+    }
 
     const request = await prisma.testRequest.create({
       data: {
         userId: session.user.id,
-        count: typeof testCount === "number" ? testCount : 5,
+        count,
         category: "MOCK",
+        examCategory: typeof examCategory === "string" ? examCategory.slice(0, 40) : null,
+        notes: [packageId ? `Package: ${packageId}` : "", typeof notes === "string" ? notes.trim() : ""].filter(Boolean).join(" — ").slice(0, 1000) || null,
         status: "PENDING"
       }
     });
@@ -97,8 +102,8 @@ export async function POST(req: Request) {
       success: true,
       request,
       message: packageId 
-        ? "Mock Test Package purchased & allocated to your child successfully!"
-        : "Mock test request submitted to institute admin & faculty successfully!"
+        ? "Package request sent! The institute will confirm and allocate the tests."
+        : "Mock test request submitted to the institute for review."
     });
   } catch (error) {
     console.error("[PARENT_REQUEST_MOCKS_POST]", error);

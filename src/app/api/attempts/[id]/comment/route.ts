@@ -1,25 +1,31 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { requireRole } from "@/lib/api";
+import { STAFF_ROLES } from "@/lib/roles";
+import { canViewAttempt } from "@/lib/attempts";
 
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await getServerSession(authOptions);
+    const { session, error } = await requireRole(STAFF_ROLES);
+    if (error) return error;
     const { id } = await params;
 
-    if (!session || !["SUPER_ADMIN", "INSTITUTE_ADMIN", "FACULTY", "MENTOR", "ADMIN"].includes(session.user.role)) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const { comment } = await request.json();
+    if (typeof comment !== "string") {
+      return NextResponse.json({ error: "comment must be a string" }, { status: 400 });
     }
 
-    const { comment } = await request.json();
+    const existing = await prisma.attempt.findUnique({ where: { id }, include: { user: { select: { organizationId: true } } } });
+    if (!existing || !(await canViewAttempt(session, existing))) {
+      return NextResponse.json({ error: "Not Found" }, { status: 404 });
+    }
 
     const attempt = await prisma.attempt.update({
       where: { id },
-      data: { mentorComment: comment }
+      data: { mentorComment: comment.trim().slice(0, 4000) || null }
     });
 
     return NextResponse.json(attempt);
@@ -28,5 +34,3 @@ export async function PATCH(
     return NextResponse.json({ error: "Internal Error" }, { status: 500 });
   }
 }
-
-

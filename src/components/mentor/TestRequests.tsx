@@ -1,83 +1,65 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Button } from "@/components/ui/button";
+import { useState } from "react";
+import { toast } from "sonner";
+import { Check, Inbox, X } from "lucide-react";
+import { Badge, Btn, Card, CardHeader, EmptyState, ErrorState, PageLoader, formatDate } from "@/components/ui/kit";
+import { apiFetch, useApi } from "@/lib/fetcher";
+
+interface TestRequest {
+  id: string;
+  count: number;
+  category: "MOCK" | "PRACTICE";
+  examCategory: string | null;
+  notes: string | null;
+  createdAt: string;
+  user: { name: string; email: string; role: string };
+}
 
 export function TestRequests() {
-  const [requests, setRequests] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data, setData, error, loading, reload } = useApi<TestRequest[]>("/api/requests");
+  const [busy, setBusy] = useState<string | null>(null);
 
-  const fetchRequests = async () => {
+  const decide = async (r: TestRequest, status: "APPROVED" | "REJECTED") => {
+    setBusy(r.id);
     try {
-      const res = await fetch("/api/requests");
-      const data = await res.json();
-      setRequests(data);
-    } catch (error) {
-      console.error("Failed to fetch requests", error);
+      await apiFetch(`/api/requests/${r.id}`, { method: "PATCH", json: { status } });
+      setData((data ?? []).filter((x) => x.id !== r.id));
+      toast.success(status === "APPROVED" ? "Request approved — remember to publish the tests in Test Manager" : "Request declined");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Action failed");
     } finally {
-      setLoading(false);
+      setBusy(null);
     }
   };
-
-  useEffect(() => {
-    fetchRequests();
-  }, []);
-
-  const handleAction = async (id: string, status: 'APPROVED' | 'REJECTED') => {
-    try {
-      const res = await fetch(`/api/requests/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status })
-      });
-
-      if (res.ok) {
-        setRequests(prev => prev.filter(r => r.id !== id));
-      }
-    } catch (err) {
-      alert("Failed to update request.");
-    }
-  };
-
-  if (loading) return <div className="text-slate-500">Loading test requests...</div>;
 
   return (
-    <div className="bg-white/[0.03] border border-white/10 rounded-2xl p-6 shadow-xl text-slate-100">
-      <h2 className="text-xl font-bold mb-6">Test Requests</h2>
-      {requests.length === 0 ? (
-        <p className="text-slate-500">No pending test requests.</p>
+    <Card>
+      <CardHeader title="Test requests" description="Extra tests requested by students and parents" icon={Inbox} />
+      {loading ? <PageLoader /> : error ? <div className="p-5"><ErrorState message={error} onRetry={reload} /></div> : !data?.length ? (
+        <EmptyState icon={Inbox} title="No pending requests" />
       ) : (
-        <div className="space-y-4">
-          {requests.map(req => (
-            <div key={req.id} className="flex items-center justify-between p-4 bg-white/[0.02] border border-white/5 rounded-xl">
-              <div>
-                <p className="font-bold">{req.user.name}</p>
-                <p className="text-sm text-slate-400">{req.user.email}</p>
-                <div className="mt-1 flex items-center gap-2">
-                  <span className="text-[10px] uppercase font-bold text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded">
-                    {req.count} {req.category} Tests
-                  </span>
+        <ul className="divide-y divide-white/[0.05]">
+          {data.map((r) => (
+            <li key={r.id} className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-sm font-medium text-slate-100">{r.user.name}</p>
+                  <Badge tone={r.user.role === "PARENT" ? "violet" : "blue"}>{r.user.role === "PARENT" ? "Parent" : "Student"}</Badge>
                 </div>
+                <p className="text-xs text-slate-400">
+                  {r.count} {r.category === "MOCK" ? "mock" : "practice"} test{r.count > 1 ? "s" : ""}{r.examCategory ? ` · ${r.examCategory}` : ""} · {formatDate(r.createdAt)}
+                </p>
+                {r.notes && <p className="mt-1 text-xs italic text-slate-500">“{r.notes}”</p>}
               </div>
               <div className="flex gap-2">
-                <Button 
-                  onClick={() => handleAction(req.id, 'APPROVED')}
-                  className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs h-8"
-                >
-                  Approve
-                </Button>
-                <Button 
-                  onClick={() => handleAction(req.id, 'REJECTED')}
-                  variant="outline"
-                  className="border-red-500/30 text-red-400 hover:bg-red-500/10 text-xs h-8"
-                >
-                  Reject
-                </Button>
+                <Btn size="sm" variant="success" loading={busy === r.id} onClick={() => decide(r, "APPROVED")}><Check className="h-3.5 w-3.5" />Approve</Btn>
+                <Btn size="sm" variant="secondary" disabled={busy === r.id} onClick={() => decide(r, "REJECTED")}><X className="h-3.5 w-3.5" />Decline</Btn>
               </div>
-            </div>
+            </li>
           ))}
-        </div>
+        </ul>
       )}
-    </div>
+    </Card>
   );
 }

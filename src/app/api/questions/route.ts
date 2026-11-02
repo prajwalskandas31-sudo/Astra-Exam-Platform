@@ -1,59 +1,42 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { requireRole, tenantOrGlobalWhere } from "@/lib/api";
+import { STAFF_ROLES } from "@/lib/roles";
+import { QUESTION_TYPES, normalizeQuestion } from "@/lib/questions";
 
 export async function GET(request: Request) {
   try {
-    const session = await getServerSession(authOptions);
-
-    if (!session || !["SUPER_ADMIN", "INSTITUTE_ADMIN", "FACULTY", "MENTOR", "ADMIN"].includes(session.user.role)) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const { session, error } = await requireRole(STAFF_ROLES);
+    if (error) return error;
 
     const { searchParams } = new URL(request.url);
-    const subject = searchParams.get("subject");
-    const chapter = searchParams.get("chapter");
-    const difficulty = searchParams.get("difficulty");
-    const examCategory = searchParams.get("examCategory");
-    const questionType = searchParams.get("questionType");
-    const search = searchParams.get("search");
+    const filters: Prisma.QuestionWhereInput[] = [tenantOrGlobalWhere(session)];
 
-    const where: any = {};
-    if (subject) where.subject = subject;
-    if (chapter) where.chapter = chapter;
-    if (difficulty) where.difficulty = difficulty;
-    if (examCategory) where.examCategory = examCategory;
-    if (questionType) where.questionType = questionType as any;
-    if (search) {
-      where.OR = [
-        { text: { contains: search } },
-        { topic: { contains: search } },
-        { tags: { contains: search } }
-      ];
+    for (const key of ["subject", "chapter", "topic", "difficulty", "examCategory", "status", "sourceFile"] as const) {
+      const value = searchParams.get(key);
+      if (value) filters.push({ [key]: value });
     }
-
-    // Tenant isolation for non-super-admin
-    if (session.user.role !== "SUPER_ADMIN" && session.user.organizationId) {
-      where.OR = [
-        { organizationId: session.user.organizationId },
-        { organizationId: null }
-      ];
+    const questionType = searchParams.get("questionType");
+    if (questionType && (QUESTION_TYPES as readonly string[]).includes(questionType)) {
+      filters.push({ questionType: questionType as (typeof QUESTION_TYPES)[number] });
+    }
+    const search = searchParams.get("search")?.trim();
+    if (search) {
+      filters.push({
+        OR: [
+          { text: { contains: search } },
+          { topic: { contains: search } },
+          { chapter: { contains: search } },
+          { tags: { contains: search } }
+        ]
+      });
     }
 
     const questions = await prisma.question.findMany({
-      where,
-      include: {
-        _count: {
-          select: { 
-            tests: true,
-            answers: true
-          }
-        }
-      },
-      orderBy: {
-        createdAt: 'desc'
-      }
+      where: { AND: filters },
+      include: { _count: { select: { tests: true, answers: true } } },
+      orderBy: { createdAt: "desc" }
     });
 
     return NextResponse.json(questions);
@@ -65,50 +48,14 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const session = await getServerSession(authOptions);
+    const { session, error } = await requireRole(STAFF_ROLES);
+    if (error) return error;
 
-    if (!session || !["SUPER_ADMIN", "INSTITUTE_ADMIN", "FACULTY", "MENTOR", "ADMIN"].includes(session.user.role)) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const body = await request.json();
-    const { 
-      text, 
-      options, 
-      correctOption, 
-      explanation, 
-      subject, 
-      chapter,
-      topic, 
-      subtopic,
-      difficulty, 
-      questionType,
-      marks,
-      negativeMarks,
-      examCategory,
-      tags, 
-      estimatedTime 
-    } = body;
+    const { data, error: validationError } = normalizeQuestion(await request.json());
+    if (!data) return NextResponse.json({ error: validationError }, { status: 400 });
 
     const question = await prisma.question.create({
-      data: {
-        text,
-        options: typeof options === 'string' ? options : JSON.stringify(options),
-        correctOption,
-        explanation,
-        subject,
-        chapter,
-        topic,
-        subtopic,
-        difficulty: difficulty || 'MEDIUM',
-        questionType: questionType || 'SINGLE_CHOICE',
-        marks: marks || 1,
-        negativeMarks: negativeMarks || 0,
-        examCategory,
-        tags: Array.isArray(tags) ? tags.join(',') : (tags || ''),
-        estimatedTime: estimatedTime || 60,
-        organizationId: session.user.organizationId
-      }
+      data: { ...data, organizationId: session.user.organizationId ?? null }
     });
 
     return NextResponse.json(question);
@@ -117,5 +64,3 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Internal Error" }, { status: 500 });
   }
 }
-
-

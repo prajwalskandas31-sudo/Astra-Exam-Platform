@@ -1,119 +1,199 @@
 "use client";
 
 import { useState } from "react";
-import { Users, Search, Plus, UserPlus, Shield, CheckCircle2, UserCheck, Link as LinkIcon } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { useSession } from "next-auth/react";
 import { toast } from "sonner";
+import { Plus, Search, Trash2, Users } from "lucide-react";
+import { Badge, Btn, Card, EmptyState, ErrorState, Field, Modal, PageHeader, PageLoader, Tabs, formatDate, inputClass } from "@/components/ui/kit";
+import { apiFetch, useApi } from "@/lib/fetcher";
+import { ROLE_LABELS, type AppRole } from "@/lib/roles";
+
+interface UserRow {
+  id: string;
+  name: string;
+  email: string;
+  phone: string | null;
+  role: AppRole;
+  status: "APPROVED" | "PENDING" | "REJECTED";
+  createdAt: string;
+  batchId: string | null;
+  batch: string;
+  linkedCount: number;
+  testsCompleted: number;
+  averageScore: number;
+}
+
+interface Batch { id: string; name: string }
+
+type RoleFilter = "ALL" | "STUDENT" | "PARENT" | "STAFF" | "ADMIN";
+
+function matchesRole(u: UserRow, f: RoleFilter) {
+  if (f === "ALL") return true;
+  if (f === "STAFF") return u.role === "FACULTY" || u.role === "MENTOR";
+  if (f === "ADMIN") return u.role === "INSTITUTE_ADMIN" || u.role === "SUPER_ADMIN";
+  return u.role === f;
+}
+
+const emptyForm = { name: "", email: "", phone: "", password: "", role: "STUDENT", batchId: "" };
 
 export default function AdminUsersPage() {
-  const [roleFilter, setRoleFilter] = useState("ALL");
-  const [searchQuery, setSearchQuery] = useState("");
+  const { data: session } = useSession();
+  const { data, setData, error, loading, reload } = useApi<UserRow[]>("/api/users?scope=all");
+  const batches = useApi<Batch[]>("/api/batches");
+  const [filter, setFilter] = useState<RoleFilter>("ALL");
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState(emptyForm);
+  const [saving, setSaving] = useState(false);
 
-  const usersList = [
-    { id: "u-1", name: "Prajwal Skanda S", email: "skanda204@gmail.com", role: "STUDENT", batch: "JEE 2026 Batch A", status: "APPROVED" },
-    { id: "u-2", name: "Dr. Rajesh Sharma", email: "mentor@astra.com", role: "FACULTY", batch: "Faculty Lead", status: "APPROVED" },
-    { id: "u-3", name: "Srinivasa S", email: "parent@astra.com", role: "PARENT", batch: "Linked to Prajwal", status: "APPROVED" },
-    { id: "u-4", name: "Ananya Roy", email: "ananya@student.com", role: "STUDENT", batch: "NEET Achievers 2026", status: "PENDING" },
-  ];
+  const users = data ?? [];
+  const visible = users.filter((u) => matchesRole(u, filter) && (!query || `${u.name} ${u.email}`.toLowerCase().includes(query.toLowerCase())));
 
-  const filtered = usersList.filter(u => {
-    const matchesRole = roleFilter === "ALL" || u.role === roleFilter;
-    const matchesQuery = u.name.toLowerCase().includes(searchQuery.toLowerCase()) || u.email.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesRole && matchesQuery;
-  });
+  const update = async (u: UserRow, patch: Partial<Pick<UserRow, "role" | "status" | "batchId">>) => {
+    try {
+      await apiFetch(`/api/users/${u.id}`, { method: "PATCH", json: patch });
+      const batchName = patch.batchId !== undefined ? batches.data?.find((b) => b.id === patch.batchId)?.name ?? "Unassigned" : u.batch;
+      setData(users.map((x) => (x.id === u.id ? { ...x, ...patch, batch: batchName } : x)));
+      toast.success("User updated");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Update failed");
+    }
+  };
+
+  const remove = async (u: UserRow) => {
+    if (!window.confirm(`Delete ${u.name}'s account? Their attempts and results will be removed too. This can't be undone.`)) return;
+    try {
+      await apiFetch(`/api/users/${u.id}`, { method: "DELETE" });
+      setData(users.filter((x) => x.id !== u.id));
+      toast.success("User deleted");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Delete failed");
+    }
+  };
+
+  const create = async () => {
+    setSaving(true);
+    try {
+      await apiFetch("/api/users", { method: "POST", json: { ...form, batchId: form.batchId || null } });
+      toast.success(`Account created for ${form.name}`);
+      setOpen(false);
+      setForm(emptyForm);
+      reload();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't create user");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) return <PageLoader label="Loading users…" />;
+  if (error) return <ErrorState message={error} onRetry={reload} />;
+
+  const count = (f: RoleFilter) => users.filter((u) => matchesRole(u, f)).length;
+  const roleOptions: AppRole[] = session?.user?.role === "SUPER_ADMIN"
+    ? ["STUDENT", "PARENT", "MENTOR", "FACULTY", "INSTITUTE_ADMIN", "SUPER_ADMIN"]
+    : ["STUDENT", "PARENT", "MENTOR", "FACULTY", "INSTITUTE_ADMIN"];
 
   return (
-    <div className="space-y-8 max-w-7xl mx-auto pb-16">
-      
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-black text-white tracking-tight">User Management</h1>
-          <p className="text-sm text-slate-400 mt-1">Manage institute students, faculty mentors, parent relationships & account access</p>
-        </div>
+    <div className="space-y-6">
+      <PageHeader title="Users" description="Create accounts, change roles, assign batches and manage access." actions={<Btn onClick={() => setOpen(true)}><Plus className="h-4 w-4" />Add user</Btn>} />
 
-        <Button onClick={() => toast.info("User creation modal opened")} className="bg-blue-600 hover:bg-blue-500 text-white font-bold h-10 px-5 rounded-xl shadow-lg shadow-blue-600/30 text-xs">
-          <UserPlus className="w-4 h-4 mr-2" />
-          Add New User
-        </Button>
-      </div>
-
-      {/* Filters Bar */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-900/60 p-4 rounded-2xl border border-white/10">
-        <div className="flex items-center gap-2">
-          {["ALL", "STUDENT", "FACULTY", "PARENT"].map((role) => (
-            <button
-              key={role}
-              onClick={() => setRoleFilter(role)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                roleFilter === role
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-white/5 text-slate-400 hover:text-white'
-              }`}
-            >
-              {role}
-            </button>
-          ))}
-        </div>
-
-        <div className="relative">
-          <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input 
-            type="text"
-            placeholder="Search user..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9 pr-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-blue-500"
-          />
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <Tabs<RoleFilter> value={filter} onChange={setFilter} items={[
+          { id: "ALL", label: "All", count: count("ALL") },
+          { id: "STUDENT", label: "Students", count: count("STUDENT") },
+          { id: "PARENT", label: "Parents", count: count("PARENT") },
+          { id: "STAFF", label: "Faculty", count: count("STAFF") },
+          { id: "ADMIN", label: "Admins", count: count("ADMIN") },
+        ]} />
+        <div className="relative lg:w-72">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search name or email" className={`${inputClass} pl-9`} />
         </div>
       </div>
 
-      {/* Users Table */}
-      <div className="bg-slate-900/60 border border-white/10 rounded-2xl p-6 space-y-4">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs text-slate-300">
-            <thead className="text-[10px] text-slate-400 uppercase bg-black/40 border-b border-white/10">
-              <tr>
-                <th className="p-3">User</th>
-                <th className="p-3">Role</th>
-                <th className="p-3">Batch / Detail</th>
-                <th className="p-3">Status</th>
-                <th className="p-3">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-white/5">
-              {filtered.map((u) => (
-                <tr key={u.id} className="hover:bg-white/[0.02]">
-                  <td className="p-3 font-semibold text-white">
-                    <div>
-                      <p className="font-bold text-slate-200">{u.name}</p>
-                      <p className="text-[10px] text-slate-400">{u.email}</p>
-                    </div>
-                  </td>
-                  <td className="p-3">
-                    <span className="px-2 py-0.5 bg-blue-500/20 text-blue-300 border border-blue-500/30 text-[10px] font-bold rounded uppercase">
-                      {u.role}
-                    </span>
-                  </td>
-                  <td className="p-3 text-slate-400">{u.batch}</td>
-                  <td className="p-3">
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                      u.status === 'APPROVED' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'
-                    }`}>
-                      {u.status}
-                    </span>
-                  </td>
-                  <td className="p-3">
-                    <Button variant="outline" className="bg-white/5 border-white/10 text-[10px] h-7 px-2 text-slate-300 hover:bg-white/10">
-                      Edit
-                    </Button>
-                  </td>
+      {visible.length === 0 ? (
+        <Card><EmptyState icon={Users} title="No users found" /></Card>
+      ) : (
+        <Card className="overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[860px] text-left text-sm">
+              <thead className="border-b border-white/[0.06] bg-black/20 text-xs text-slate-400">
+                <tr>
+                  <th className="px-5 py-3 font-medium">User</th>
+                  <th className="px-3 py-3 font-medium">Role</th>
+                  <th className="px-3 py-3 font-medium">Batch</th>
+                  <th className="px-3 py-3 font-medium">Activity</th>
+                  <th className="px-3 py-3 font-medium">Status</th>
+                  <th className="px-3 py-3" />
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+              </thead>
+              <tbody className="divide-y divide-white/[0.05]">
+                {visible.map((u) => {
+                  const self = u.id === session?.user?.id;
+                  return (
+                    <tr key={u.id} className="hover:bg-white/[0.02]">
+                      <td className="px-5 py-3">
+                        <p className="font-medium text-slate-100">{u.name}{self && <span className="text-xs text-slate-500"> (you)</span>}</p>
+                        <p className="text-xs text-slate-500">{u.email}{u.phone ? ` · ${u.phone}` : ""} · joined {formatDate(u.createdAt)}</p>
+                      </td>
+                      <td className="px-3 py-3">
+                        <select value={u.role} disabled={self} onChange={(e) => update(u, { role: e.target.value as AppRole })} className={`${inputClass} w-40 py-1.5 text-xs`} aria-label={`Role for ${u.name}`}>
+                          {[...new Set([...roleOptions, u.role])].map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
+                        </select>
+                      </td>
+                      <td className="px-3 py-3">
+                        {u.role === "STUDENT" ? (
+                          <select value={u.batchId ?? ""} onChange={(e) => update(u, { batchId: e.target.value || null })} className={`${inputClass} w-44 py-1.5 text-xs`} aria-label={`Batch for ${u.name}`}>
+                            <option value="">Unassigned</option>
+                            {(batches.data ?? []).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                          </select>
+                        ) : <span className="text-xs text-slate-600">—</span>}
+                      </td>
+                      <td className="px-3 py-3 text-xs text-slate-400">
+                        {u.role === "STUDENT" ? `${u.testsCompleted} tests · avg ${u.averageScore}%` : u.role === "PARENT" ? `${u.linkedCount} child${u.linkedCount === 1 ? "" : "ren"} linked` : "—"}
+                      </td>
+                      <td className="px-3 py-3">
+                        {u.status === "APPROVED" ? (
+                          <button disabled={self} onClick={() => update(u, { status: "REJECTED" })} className="disabled:cursor-default" title={self ? "" : "Click to deactivate"}><Badge tone="emerald">Active</Badge></button>
+                        ) : (
+                          <button onClick={() => update(u, { status: "APPROVED" })} title="Click to activate"><Badge tone={u.status === "PENDING" ? "amber" : "rose"}>{u.status === "PENDING" ? "Pending" : "Deactivated"}</Badge></button>
+                        )}
+                      </td>
+                      <td className="px-3 py-3 text-right">
+                        {!self && <button onClick={() => remove(u)} className="rounded-lg p-2 text-slate-500 hover:bg-rose-500/10 hover:text-rose-400" aria-label={`Delete ${u.name}`}><Trash2 className="h-4 w-4" /></button>}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
 
+      <Modal open={open} onClose={() => setOpen(false)} title="Add user" description="The account is active immediately. Share the password with the user securely."
+        footer={<><Btn variant="secondary" onClick={() => setOpen(false)}>Cancel</Btn><Btn loading={saving} disabled={!form.name || !form.email || form.password.length < 8} onClick={create}>Create account</Btn></>}>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Full name"><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className={inputClass} /></Field>
+          <Field label="Email"><input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className={inputClass} /></Field>
+          <Field label="Mobile (optional)"><input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className={inputClass} /></Field>
+          <Field label="Temporary password" hint="At least 8 characters"><input value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className={inputClass} /></Field>
+          <Field label="Role">
+            <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className={inputClass}>
+              {roleOptions.map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
+            </select>
+          </Field>
+          {form.role === "STUDENT" && (
+            <Field label="Batch">
+              <select value={form.batchId} onChange={(e) => setForm({ ...form, batchId: e.target.value })} className={inputClass}>
+                <option value="">Unassigned</option>
+                {(batches.data ?? []).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+              </select>
+            </Field>
+          )}
+        </div>
+      </Modal>
     </div>
   );
 }

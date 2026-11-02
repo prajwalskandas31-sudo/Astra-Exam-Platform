@@ -13,11 +13,11 @@ export function VirtualCalculator({ onClose }: VirtualCalculatorProps) {
   const [memory, setMemory] = useState<number | null>(null);
 
   const handleNum = (num: string) => {
-    setDisplay((prev) => (prev === "0" ? num : prev + num));
+    setDisplay((prev) => (prev === "0" || prev === "Error" ? num : prev + num));
   };
 
   const handleOp = (op: string) => {
-    setDisplay((prev) => prev + " " + op + " ");
+    setDisplay((prev) => (prev === "Error" ? "0" : prev) + " " + op + " ");
   };
 
   const handleClear = () => {
@@ -28,15 +28,17 @@ export function VirtualCalculator({ onClose }: VirtualCalculatorProps) {
     try {
       // Safe mathematical expression evaluator
       const sanitized = display.replace(/×/g, "*").replace(/÷/g, "/");
+      // Input only ever comes from the keypad, so it's limited to digits, dots and + - * /
+      if (!/^[\d.\s+\-*/]+$/.test(sanitized)) throw new Error("invalid");
       const result = Function(`"use strict"; return (${sanitized})`)();
-      setDisplay(String(result));
+      setDisplay(Number.isFinite(result) ? String(Math.round(result * 1e10) / 1e10) : "Error");
     } catch {
       setDisplay("Error");
     }
   };
 
   return (
-    <div className="fixed top-20 right-8 z-50 w-72 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-4 text-white font-mono">
+    <div className="fixed right-4 top-20 z-50 w-72 sm:right-8 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-4 text-white font-mono">
       <div className="flex items-center justify-between pb-3 border-b border-slate-800">
         <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">GATE Scientific Calc</span>
         <button onClick={onClose} className="text-slate-400 hover:text-white transition">

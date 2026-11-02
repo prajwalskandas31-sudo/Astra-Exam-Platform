@@ -49,7 +49,7 @@ export default function ParentRequestsPage() {
         setNotes("");
         fetchRequests();
       } else {
-        toast.error("Failed to submit request");
+        toast.error(resData.error || "Failed to submit request");
       }
     } catch (err) {
       toast.error("Error submitting mock test request");
@@ -59,7 +59,7 @@ export default function ParentRequestsPage() {
   };
 
   const handlePurchasePackage = async (pkg: any) => {
-    toast.loading(`Processing mock test package allocation for ${pkg.title}...`);
+    toast.loading(`Sending request for ${pkg.title}...`);
     try {
       const res = await fetch("/api/parent/request-mocks", {
         method: "POST",
@@ -73,10 +73,12 @@ export default function ParentRequestsPage() {
       });
 
       const resData = await res.json();
+      toast.dismiss();
       if (res.ok) {
-        toast.dismiss();
-        toast.success(`🎉 ${pkg.title} successfully allocated to your child's portal!`);
+        toast.success(resData.message);
         fetchRequests();
+      } else {
+        toast.error(resData.error || "Request failed");
       }
     } catch (err) {
       toast.dismiss();

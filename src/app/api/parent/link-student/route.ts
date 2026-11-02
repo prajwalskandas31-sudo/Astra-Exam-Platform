@@ -1,58 +1,50 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { requireRole } from "@/lib/api";
+
+const digits = (s: string) => s.replace(/\D/g, "");
 
 export async function POST(req: Request) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session || session.user.role !== "PARENT") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const { session, error } = await requireRole(["PARENT"]);
+    if (error) return error;
 
     const { studentEmail, studentPhone } = await req.json();
+    const email = typeof studentEmail === "string" ? studentEmail.trim().toLowerCase() : "";
+    const phone = typeof studentPhone === "string" ? digits(studentPhone) : "";
 
-    if (!studentEmail && !studentPhone) {
-      return NextResponse.json({ error: "Student email or phone is required" }, { status: 400 });
+    // Require both identifiers so a parent can't attach to an arbitrary student by email alone
+    if (!email || phone.length < 6) {
+      return NextResponse.json({ error: "Enter your child's account email and the mobile number registered on it" }, { status: 400 });
     }
 
-    // Find student in database
     const student = await prisma.user.findFirst({
-      where: {
-        role: "STUDENT",
-        OR: [
-          studentEmail ? { email: studentEmail.trim() } : {},
-          studentPhone ? { phone: studentPhone.trim() } : {}
-        ]
-      }
+      where: { role: "STUDENT", email },
+      select: { id: true, name: true, email: true, phone: true }
     });
 
-    if (!student) {
-      return NextResponse.json({ 
-        error: "Student account not found with the provided email/phone. Request sent to institute admin for manual verification." 
+    // Compare on trailing digits so "+91 98765 43211" matches "9876543211"
+    const studentDigits = student?.phone ? digits(student.phone) : "";
+    const matches = !!student && studentDigits.length >= 6 && (studentDigits.endsWith(phone) || phone.endsWith(studentDigits));
+    if (!student || !matches) {
+      return NextResponse.json({
+        error: "We couldn't verify a student with that email and mobile number. Check the details or ask your institute to link the account."
       }, { status: 404 });
     }
 
-    // Create link
-    try {
-      await prisma.parentStudentLink.create({
-        data: {
-          parentId: session.user.id,
-          studentId: student.id
-        }
-      });
-    } catch (e) {
-      // already linked
+    const existing = await prisma.parentStudentLink.findUnique({
+      where: { parentId_studentId: { parentId: session.user.id, studentId: student.id } }
+    });
+    if (existing) {
+      return NextResponse.json({ error: `${student.name} is already linked to your account` }, { status: 409 });
     }
+
+    await prisma.parentStudentLink.create({ data: { parentId: session.user.id, studentId: student.id } });
 
     return NextResponse.json({
       success: true,
-      message: `Successfully connected ${student.name} (${student.email}) to your parent oversight portal!`,
-      student: {
-        id: student.id,
-        name: student.name,
-        email: student.email
-      }
+      message: `${student.name} is now linked to your parent portal.`,
+      student: { id: student.id, name: student.name, email: student.email }
     });
   } catch (error) {
     console.error("[PARENT_LINK_STUDENT_POST]", error);
@@ -60,4 +52,18 @@ export async function POST(req: Request) {
   }
 }
 
+export async function DELETE(req: Request) {
+  try {
+    const { session, error } = await requireRole(["PARENT"]);
+    if (error) return error;
 
+    const studentId = new URL(req.url).searchParams.get("studentId");
+    if (!studentId) return NextResponse.json({ error: "studentId is required" }, { status: 400 });
+
+    await prisma.parentStudentLink.deleteMany({ where: { parentId: session.user.id, studentId } });
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("[PARENT_LINK_STUDENT_DELETE]", error);
+    return NextResponse.json({ error: "Internal Error" }, { status: 500 });
+  }
+}

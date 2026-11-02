@@ -1,31 +1,30 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { requireRole, tenantWhere } from "@/lib/api";
+import { STAFF_ROLES } from "@/lib/roles";
 
 export async function GET() {
   try {
-    const session = await getServerSession(authOptions);
+    const { session, error } = await requireRole(STAFF_ROLES);
+    if (error) return error;
 
-    if (!session || (session.user.role !== "ADMIN" && session.user.role !== "MENTOR")) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
+    // Explicit select: never send password hashes or session ids to the client
     const students = await prisma.user.findMany({
-      where: { 
-        role: 'STUDENT',
-        status: 'APPROVED'
-      },
-      include: {
+      where: { role: "STUDENT", status: "APPROVED", ...tenantWhere(session) },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        phone: true,
+        createdAt: true,
+        batch: { select: { id: true, name: true } },
+        studentLinks: { select: { parent: { select: { id: true, name: true, phone: true, email: true } } } },
         attempts: {
-          include: {
-            test: true
-          },
-          orderBy: {
-            createdAt: 'desc'
-          }
+          include: { test: { select: { id: true, title: true, totalMarks: true, type: true, mode: true } } },
+          orderBy: { createdAt: "desc" }
         }
-      }
+      },
+      orderBy: { name: "asc" }
     });
 
     return NextResponse.json(students);
@@ -34,5 +33,3 @@ export async function GET() {
     return NextResponse.json({ error: "Internal Error" }, { status: 500 });
   }
 }
-
-

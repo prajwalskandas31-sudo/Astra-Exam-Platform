@@ -1,118 +1,72 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Award, CheckCircle2, XCircle, Percent, Trophy, Play } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import Link from "next/link";
+import { Award, ChevronRight } from "lucide-react";
+import { Badge, Btn, Card, EmptyState, ErrorState, PageHeader, PageLoader, StatCard, formatDate, formatDuration, scoreTone } from "@/components/ui/kit";
+import { useApi } from "@/lib/fetcher";
+
+interface Insights {
+  summary: { testsTaken: number; avgPercentage: number; avgAccuracy: number; bestPercentage: number };
+  timeline: {
+    attemptId: string; testTitle: string; testType: string; isRetry: boolean; date: string; score: number;
+    percentage: number; accuracy: number; rank: number | null; percentile: number | null;
+    correct: number; incorrect: number; unattempted: number; total: number; timeTaken: number | null;
+  }[];
+}
 
 export default function MyResultsPage() {
-  const [attempts, setAttempts] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data, error, loading, reload } = useApi<Insights>("/api/student/insights");
 
-  useEffect(() => {
-    fetch("/api/attempts/history")
-      .then(res => res.json())
-      .then(data => {
-        if (Array.isArray(data)) setAttempts(data);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  }, []);
+  if (loading) return <PageLoader label="Loading results…" />;
+  if (error || !data) return <ErrorState message={error || "Failed to load"} onRetry={reload} />;
 
-  const totalAttempted = attempts.length;
-  const totalCorrect = attempts.reduce((acc, curr) => acc + (curr.correctCount || 0), 0);
-  const totalIncorrect = attempts.reduce((acc, curr) => acc + (curr.incorrectCount || 0), 0);
-  const avgPercentage = totalAttempted > 0 
-    ? (attempts.reduce((acc, curr) => acc + (curr.percentage || 0), 0) / totalAttempted).toFixed(2)
-    : "0.00";
+  const rows = [...data.timeline].reverse();
 
   return (
-    <div className="space-y-8 max-w-7xl mx-auto pb-16">
-      
-      <div>
-        <h1 className="text-3xl font-black text-white tracking-tight">My Results</h1>
-        <p className="text-sm text-slate-400 mt-1">Overall Performance Report - Track your exam performance and detailed analysis</p>
+    <div className="space-y-6">
+      <PageHeader title="My Results" description="Scorecards for every test you've submitted." />
+
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <StatCard label="Tests taken" value={data.summary.testsTaken} />
+        <StatCard label="Average score" value={`${data.summary.avgPercentage}%`} />
+        <StatCard label="Best score" value={`${data.summary.bestPercentage}%`} />
+        <StatCard label="Average accuracy" value={`${data.summary.avgAccuracy}%`} />
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        
-        <div className="p-5 rounded-2xl border border-white/10 bg-slate-900/60 backdrop-blur-md">
-          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total Tests Attempted</p>
-          <p className="text-3xl font-black text-white mt-1">{totalAttempted}</p>
-        </div>
-
-        <div className="p-5 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 backdrop-blur-md">
-          <p className="text-xs font-semibold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
-            <CheckCircle2 className="w-3.5 h-3.5" />
-            Total Correct
-          </p>
-          <p className="text-3xl font-black text-emerald-300 mt-1">{totalCorrect}</p>
-        </div>
-
-        <div className="p-5 rounded-2xl border border-rose-500/30 bg-rose-500/10 backdrop-blur-md">
-          <p className="text-xs font-semibold text-rose-400 uppercase tracking-wider flex items-center gap-1.5">
-            <XCircle className="w-3.5 h-3.5" />
-            Total Incorrect
-          </p>
-          <p className="text-3xl font-black text-rose-300 mt-1">{totalIncorrect}</p>
-        </div>
-
-        <div className="p-5 rounded-2xl border border-blue-500/30 bg-blue-500/10 backdrop-blur-md">
-          <p className="text-xs font-semibold text-blue-400 uppercase tracking-wider flex items-center gap-1.5">
-            <Percent className="w-3.5 h-3.5" />
-            Avg Percentage
-          </p>
-          <p className="text-3xl font-black text-blue-300 mt-1">{avgPercentage}%</p>
-        </div>
-
-      </div>
-
-      {/* Test wise Performance Summary */}
-      <div className="bg-slate-900/60 border border-white/10 rounded-2xl p-6 space-y-4">
-        <h2 className="text-lg font-bold text-white tracking-tight flex items-center gap-2">
-          <Trophy className="w-5 h-5 text-amber-400" />
-          Test wise Performance Summary
-        </h2>
-
-        {totalAttempted === 0 ? (
-          <div className="text-center py-12 space-y-3">
-            <div className="w-12 h-12 rounded-full bg-white/5 border border-white/10 flex items-center justify-center mx-auto text-slate-500">
-              <Trophy className="w-6 h-6" />
-            </div>
-            <p className="text-sm font-semibold text-slate-400">No tests yet</p>
-            <Link href="/student/practice">
-              <Button className="bg-blue-600 hover:bg-blue-500 text-white font-bold h-10 px-5 rounded-xl shadow-lg shadow-blue-600/30 text-xs">
-                Take an Exam
-              </Button>
-            </Link>
-          </div>
-        ) : (
+      {rows.length === 0 ? (
+        <Card>
+          <EmptyState icon={Award} title="No results yet" description="Submit a test to see your scorecard here." action={<Link href="/student/mocks"><Btn>Find a test</Btn></Link>} />
+        </Card>
+      ) : (
+        <Card className="overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs text-slate-300">
-              <thead className="text-[10px] text-slate-400 uppercase bg-black/40 border-b border-white/10">
+            <table className="w-full min-w-[720px] text-left text-sm">
+              <thead className="border-b border-white/[0.06] bg-black/20 text-xs text-slate-400">
                 <tr>
-                  <th className="p-3">Test Title</th>
-                  <th className="p-3">Date</th>
-                  <th className="p-3">Score</th>
-                  <th className="p-3">Accuracy</th>
-                  <th className="p-3">Percentage</th>
-                  <th className="p-3">Action</th>
+                  <th className="px-5 py-3 font-medium">Test</th>
+                  <th className="px-3 py-3 font-medium">Score</th>
+                  <th className="px-3 py-3 font-medium">Accuracy</th>
+                  <th className="px-3 py-3 font-medium">✓ / ✗ / –</th>
+                  <th className="px-3 py-3 font-medium">Rank</th>
+                  <th className="px-3 py-3 font-medium">Time</th>
+                  <th className="px-3 py-3" />
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/5">
-                {attempts.map((att) => (
-                  <tr key={att.id} className="hover:bg-white/[0.02]">
-                    <td className="p-3 font-semibold text-white">{att.test?.title || "Mock Attempt"}</td>
-                    <td className="p-3 text-slate-400">{new Date(att.createdAt).toLocaleDateString()}</td>
-                    <td className="p-3 font-bold text-blue-400">{att.score || 0}</td>
-                    <td className="p-3 text-emerald-400 font-bold">{att.accuracy ? `${att.accuracy}%` : "-"}</td>
-                    <td className="p-3 font-bold text-purple-400">{att.percentage ? `${att.percentage}%` : "-"}</td>
-                    <td className="p-3">
-                      <Link href={`/report/${att.id}`}>
-                        <Button className="bg-blue-600/20 text-blue-400 border border-blue-500/30 hover:bg-blue-600/30 h-7 text-[10px] font-bold px-3 rounded-lg">
-                          View Report
-                        </Button>
+              <tbody className="divide-y divide-white/[0.05]">
+                {rows.map((r) => (
+                  <tr key={r.attemptId} className="hover:bg-white/[0.02]">
+                    <td className="px-5 py-3">
+                      <p className="font-medium text-slate-100">{r.testTitle}</p>
+                      <p className="text-xs text-slate-500">{formatDate(r.date)}{r.isRetry && " · retest"}</p>
+                    </td>
+                    <td className="px-3 py-3"><Badge tone={scoreTone(r.percentage)}>{r.percentage}%</Badge><span className="ml-2 text-xs text-slate-500">{r.score} marks</span></td>
+                    <td className="px-3 py-3 tabular-nums text-slate-300">{r.accuracy}%</td>
+                    <td className="px-3 py-3 tabular-nums text-xs"><span className="text-emerald-400">{r.correct}</span> / <span className="text-rose-400">{r.incorrect}</span> / <span className="text-slate-400">{r.unattempted}</span></td>
+                    <td className="px-3 py-3 tabular-nums text-slate-300">{r.isRetry || !r.rank ? "—" : `#${r.rank}`}</td>
+                    <td className="px-3 py-3 text-slate-400">{formatDuration(r.timeTaken)}</td>
+                    <td className="px-3 py-3 text-right">
+                      <Link href={`/exam/${r.attemptId}/results`} className="inline-flex items-center text-xs font-semibold text-blue-400 hover:text-blue-300">
+                        Details <ChevronRight className="h-3.5 w-3.5" />
                       </Link>
                     </td>
                   </tr>
@@ -120,9 +74,8 @@ export default function MyResultsPage() {
               </tbody>
             </table>
           </div>
-        )}
-      </div>
-
+        </Card>
+      )}
     </div>
   );
 }

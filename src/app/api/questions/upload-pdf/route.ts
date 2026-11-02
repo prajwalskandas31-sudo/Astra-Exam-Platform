@@ -1,114 +1,114 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@prisma/client";
 import { GoogleGenAI } from "@google/genai";
+import { prisma } from "@/lib/prisma";
+import { requireRole } from "@/lib/api";
+import { STAFF_ROLES } from "@/lib/roles";
+import { normalizeQuestion } from "@/lib/questions";
 
-// Initialize Gemini SDK
-// Note: Requires GEMINI_API_KEY environment variable
-const ai = new GoogleGenAI({});
+const MAX_PDF_BYTES = 15 * 1024 * 1024;
+
+async function pdfText(file: File): Promise<string> {
+  // Use eval('require') so the bundler doesn't try to trace pdf-parse's test fixtures
+  const pdfParse = eval("require")("pdf-parse");
+  const data = await pdfParse(Buffer.from(await file.arrayBuffer()));
+  return data.text as string;
+}
 
 export async function POST(request: Request) {
   try {
-    const session = await getServerSession(authOptions);
+    const { session, error } = await requireRole(STAFF_ROLES);
+    if (error) return error;
 
-    if (!session || (session.user.role !== "ADMIN" && session.user.role !== "MENTOR")) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!process.env.GEMINI_API_KEY && !process.env.GOOGLE_API_KEY) {
+      return NextResponse.json(
+        { error: "AI extraction is not configured. Set GEMINI_API_KEY in the environment, or use JSON bulk upload instead." },
+        { status: 503 }
+      );
     }
 
     const formData = await request.formData();
-    const file = formData.get("file") as File;
-    const answerFile = formData.get("answerFile") as File | null;
-    const questionSetName = formData.get("questionSetName") as string | null;
+    const file = formData.get("file");
+    const answerFile = formData.get("answerFile");
+    const questionSetName = formData.get("questionSetName");
+    const subject = formData.get("subject");
 
-    if (!file) {
+    if (!(file instanceof File) || file.size === 0) {
       return NextResponse.json({ error: "No question file uploaded" }, { status: 400 });
     }
-
-    // Use eval('require') to bypass Next.js Webpack intercepting pdf-parse
-    const pdfParse = eval('require')('pdf-parse');
-
-    // Parse Questions PDF
-    const buffer = Buffer.from(await file.arrayBuffer());
-    const data = await pdfParse(buffer);
-    const text = data.text;
-    
-    let answerText = "";
-    if (answerFile) {
-      const ansBuffer = Buffer.from(await answerFile.arrayBuffer());
-      const ansData = await pdfParse(ansBuffer);
-      answerText = ansData.text;
+    for (const f of [file, answerFile]) {
+      if (f instanceof File && f.size > 0) {
+        if (f.size > MAX_PDF_BYTES) return NextResponse.json({ error: "PDFs must be under 15 MB" }, { status: 400 });
+        if (f.type && f.type !== "application/pdf") return NextResponse.json({ error: "Only PDF files are supported" }, { status: 400 });
+      }
     }
 
-    // --- AI-POWERED EXTRACTION USING GEMINI ---
-    const prompt = `
-      You are an expert educational data extractor.
-      Extract multiple-choice questions from the following text extracted from a PDF.
-      For each question, extract the question text and all options.
-      If an Answer Key text is provided below, map the correct option for each question. If not, default to "A".
-      
-      Output the data STRICTLY as a JSON array of objects with the following schema:
-      [
-        {
-          "qNumber": "The original question number as a string (e.g., '1')",
-          "text": "The question text",
-          "options": [
-            { "id": "A", "text": "Option A text" },
-            { "id": "B", "text": "Option B text" }
-          ],
-          "correctOption": "A, B, C, D, or E"
-        }
-      ]
-      
-      Questions Text:
-      ${text.substring(0, 30000)} // Limiting to avoid token overflow in extremely large documents
+    const text = await pdfText(file);
+    const answerText = answerFile instanceof File && answerFile.size > 0 ? await pdfText(answerFile) : "";
 
-      Answer Key Text (if any):
-      ${answerText.substring(0, 10000)}
-    `;
+    const prompt = `You are an expert educational data extractor.
+Extract every multiple-choice question from the PDF text below. For each question extract the question text and all options.
+If an answer key is provided, map the correct option id for each question by its question number. If no answer is known, use an empty string.
+Also infer a short "topic" (2-4 words) for each question.
 
+Return ONLY a JSON array of objects with this schema:
+[{ "qNumber": "1", "text": "...", "options": [{ "id": "A", "text": "..." }], "correctOption": "A", "topic": "...", "explanation": "" }]
+
+Questions text:
+${text.substring(0, 60000)}
+
+Answer key text (may be empty):
+${answerText.substring(0, 15000)}`;
+
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY });
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: "gemini-2.5-flash",
       contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-      }
+      config: { responseMimeType: "application/json" }
     });
 
-    const resultText = response.text || "[]";
-    let extractedData = [];
+    let extracted: unknown;
     try {
-      extractedData = JSON.parse(resultText);
-    } catch (e) {
-      console.error("Failed to parse AI JSON response:", resultText);
-      return NextResponse.json({ error: "AI failed to generate valid structured data." }, { status: 500 });
+      extracted = JSON.parse(response.text || "[]");
+    } catch {
+      return NextResponse.json({ error: "The AI returned malformed data. Please try again." }, { status: 502 });
+    }
+    if (!Array.isArray(extracted) || extracted.length === 0) {
+      return NextResponse.json({ error: "No questions could be found in that PDF." }, { status: 400 });
     }
 
-    if (!Array.isArray(extractedData) || extractedData.length === 0) {
-      return NextResponse.json({ error: "Could not parse any questions using AI." }, { status: 400 });
+    const sourceFile = (typeof questionSetName === "string" && questionSetName.trim()) || file.name;
+    const rows: Prisma.QuestionUncheckedCreateInput[] = [];
+    let missingAnswers = 0;
+
+    for (const raw of extracted as Record<string, unknown>[]) {
+      const hasAnswer = typeof raw.correctOption === "string" && raw.correctOption.trim() !== "";
+      if (!hasAnswer) missingAnswers++;
+      const { data } = normalizeQuestion({
+        ...raw,
+        // Without a key we still import, flagged for review, with a placeholder answer
+        correctOption: hasAnswer ? raw.correctOption : "A",
+        subject: typeof subject === "string" && subject.trim() ? subject : "General",
+        tags: hasAnswer ? "ai-extracted" : "ai-extracted,needs-answer-review",
+        status: "DRAFT"
+      });
+      if (data) rows.push({ ...data, sourceFile, organizationId: session.user.organizationId ?? null });
     }
 
-    const questionsToInsert = extractedData.map((q: any) => ({
-      text: q.text,
-      options: JSON.stringify(q.options),
-      correctOption: q.correctOption || "A", 
-      subject: "General",
-      topic: "Mixed",
-      difficulty: "MEDIUM",
-      tags: "ai-extracted",
-      estimatedTime: 60,
-      sourceFile: questionSetName || file.name,
-      status: "DRAFT"
-    }));
+    if (rows.length === 0) {
+      return NextResponse.json({ error: "Questions were found but none had usable options." }, { status: 400 });
+    }
 
-    // Insert into DB
-    const createdCount = await prisma.$transaction(
-      questionsToInsert.map(q => prisma.question.create({ data: q }))
-    );
+    const created = await prisma.$transaction(rows.map((data) => prisma.question.create({ data })));
 
-    return NextResponse.json({ success: true, count: createdCount.length });
+    return NextResponse.json({
+      success: true,
+      count: created.length,
+      missingAnswers,
+      message: `Imported ${created.length} questions as drafts${missingAnswers ? ` (${missingAnswers} need an answer key review)` : ""}. Review and publish them in the question bank.`
+    });
   } catch (error) {
     console.error("[PDF_UPLOAD_POST]", error);
-    return NextResponse.json({ error: "Internal Error" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to process the PDF" }, { status: 500 });
   }
 }

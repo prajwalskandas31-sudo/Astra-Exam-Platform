@@ -1,27 +1,24 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { requireRole } from "@/lib/api";
 
 export async function GET() {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const { session, error } = await requireRole(["STUDENT"]);
+    if (error) return error;
 
-    let attempts: any[] = [];
-    try {
-      attempts = await prisma.attempt.findMany({
-        where: { userId: session.user.id },
-        include: { test: true },
-        orderBy: { createdAt: "desc" }
-      });
-    } catch (e) {}
+    const attempts = await prisma.attempt.findMany({
+      where: { userId: session.user.id },
+      include: {
+        test: { include: { _count: { select: { questions: true } } } },
+        _count: { select: { answers: true } }
+      },
+      orderBy: { createdAt: "desc" }
+    });
 
     return NextResponse.json(attempts);
   } catch (error) {
     console.error("[ATTEMPTS_HISTORY_GET]", error);
-    return NextResponse.json([]);
+    return NextResponse.json({ error: "Internal Error" }, { status: 500 });
   }
 }

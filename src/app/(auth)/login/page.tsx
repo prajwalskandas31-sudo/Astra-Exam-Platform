@@ -1,12 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
+import { homePathForRole } from "@/lib/roles";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { Eye, EyeOff, Lock, Mail, User, Phone, Sparkles, ArrowRight, ShieldCheck, Users, GraduationCap, Shield } from "lucide-react";
 import { toast } from "sonner";
+
+const LOGIN_ERRORS: Record<string, string> = {
+  CredentialsSignin: "Invalid email or password.",
+  AccountPending: "Your account is awaiting approval from your institute. You'll be able to sign in once it's approved.",
+  AccountRejected: "This account has been deactivated. Please contact your institute.",
+  AccountDisabled: "This account has been deactivated. Please contact your institute.",
+  SessionInvalid: "You were signed out because your account was used to sign in on another device.",
+};
 
 export default function LoginPage() {
   const router = useRouter();
@@ -28,6 +37,14 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
+  // Explain why the user landed back on the login page
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("mode") === "signup") setAuthMode("signup");
+    const code = params.get("error");
+    if (code) setError(LOGIN_ERRORS[code] ?? "Please sign in to continue.");
+  }, []);
+
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
@@ -40,23 +57,13 @@ export default function LoginPage() {
     });
 
     if (res?.error) {
-      setError("Invalid email or password");
+      setError(LOGIN_ERRORS[res.error] ?? LOGIN_ERRORS.CredentialsSignin);
       setIsLoading(false);
     } else {
       const sessionRes = await fetch("/api/auth/session");
       const sessionData = await sessionRes.json();
-      const role = sessionData?.user?.role;
-      
       toast.success("Welcome back!");
-      if (role === "ADMIN" || role === "INSTITUTE_ADMIN" || role === "SUPER_ADMIN") {
-        router.push("/admin");
-      } else if (role === "MENTOR" || role === "FACULTY") {
-        router.push("/mentor/students");
-      } else if (role === "PARENT") {
-        router.push("/dashboard/parent");
-      } else {
-        router.push("/student");
-      }
+      router.push(homePathForRole(sessionData?.user?.role));
       router.refresh();
     }
   };
@@ -79,26 +86,27 @@ export default function LoginPage() {
         })
       });
 
-      if (res.ok) {
-        toast.success(`Account created as ${signupRole}! Signing you in...`);
-        // Auto login
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error || "Failed to create account");
+      } else if (data.requiresApproval) {
+        toast.success("Account created! An admin will approve your mentor access shortly.");
+        setAuthMode("signin");
+        setEmail(signupEmail);
+        setError(LOGIN_ERRORS.AccountPending);
+      } else {
+        toast.success("Account created! Signing you in…");
         const loginRes = await signIn("credentials", {
           email: signupEmail,
           password: signupPassword,
           redirect: false,
         });
         if (!loginRes?.error) {
-          if (signupRole === "PARENT") {
-            router.push("/dashboard/parent");
-          } else if (signupRole === "MENTOR") {
-            router.push("/mentor/students");
-          } else {
-            router.push("/student");
-          }
+          router.push(homePathForRole(signupRole));
+          router.refresh();
+        } else {
+          setAuthMode("signin");
         }
-      } else {
-        const text = await res.text();
-        setError(text || "Failed to create account");
       }
     } catch (err) {
       setError("Error creating account");
@@ -125,7 +133,7 @@ export default function LoginPage() {
             </div>
             <div>
               <span className="text-xl font-black tracking-tight text-white block leading-tight">
-                Mock Test Club
+                Astra
               </span>
               <span className="text-[10px] text-blue-400 font-semibold uppercase tracking-wider block">Multi-Role Exam Platform</span>
             </div>
@@ -338,8 +346,10 @@ export default function LoginPage() {
                     type={showPassword ? "text" : "password"}
                     value={signupPassword}
                     onChange={(e) => setSignupPassword(e.target.value)}
-                    placeholder="••••••••"
+                    placeholder="At least 8 characters"
                     required
+                    minLength={8}
+                    autoComplete="new-password"
                     className="w-full pl-10 pr-10 py-3 bg-slate-900/80 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-blue-500 transition-colors"
                   />
                 </div>

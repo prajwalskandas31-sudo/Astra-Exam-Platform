@@ -1,86 +1,62 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Button } from "@/components/ui/button";
+import { useState } from "react";
+import { toast } from "sonner";
+import { Check, UserCheck, X } from "lucide-react";
+import { Badge, Btn, Card, CardHeader, EmptyState, ErrorState, PageLoader, formatDate } from "@/components/ui/kit";
+import { apiFetch, useApi } from "@/lib/fetcher";
+import { ROLE_LABELS, type AppRole } from "@/lib/roles";
 
-interface User {
+interface PendingUser {
   id: string;
   name: string;
   email: string;
+  phone: string | null;
+  role: AppRole;
   createdAt: string;
 }
 
 export function PendingStudents() {
-  const [students, setStudents] = useState<User[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data, setData, error, loading, reload } = useApi<PendingUser[]>("/api/users/pending");
+  const [busy, setBusy] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetch("/api/users/pending")
-      .then((res) => res.json())
-      .then((data) => {
-        if (Array.isArray(data)) setStudents(data);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  }, []);
-
-  const handleApproval = async (id: string, status: "APPROVED" | "REJECTED") => {
+  const decide = async (u: PendingUser, status: "APPROVED" | "REJECTED") => {
+    setBusy(u.id);
     try {
-      await fetch(`/api/users/${id}/approve`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status }),
-      });
-      setStudents((prev) => prev.filter((s) => s.id !== id));
-    } catch (error) {
-      console.error("Failed to approve/reject", error);
+      await apiFetch(`/api/users/${u.id}/approve`, { method: "PUT", json: { status } });
+      setData((data ?? []).filter((x) => x.id !== u.id));
+      toast.success(`${u.name} ${status === "APPROVED" ? "approved" : "rejected"}`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Action failed");
+    } finally {
+      setBusy(null);
     }
   };
 
-  if (loading) return <div className="bg-white/[0.03] border border-white/10 backdrop-blur-md p-6 rounded-2xl shadow-xl text-slate-400">Loading pending students...</div>;
-
   return (
-    <div className="bg-white/[0.03] border border-white/10 backdrop-blur-md p-6 rounded-2xl shadow-xl text-slate-100">
-      <div className="mb-6 flex items-center justify-between">
-        <h2 className="text-xl font-bold tracking-tight">Pending Approvals</h2>
-        {students.length > 0 && (
-          <span className="text-xs font-bold uppercase tracking-wider bg-amber-500/20 text-amber-300 px-3 py-1.5 rounded-md border border-amber-500/30">
-            {students.length} Pending
-          </span>
-        )}
-      </div>
-
-      {students.length === 0 ? (
-        <div className="p-8 text-center text-slate-500 border border-white/5 rounded-xl bg-white/[0.01]">
-          No pending students.
-        </div>
+    <Card>
+      <CardHeader title="Account approvals" description="New accounts waiting for access" icon={UserCheck} />
+      {loading ? <PageLoader /> : error ? <div className="p-5"><ErrorState message={error} onRetry={reload} /></div> : !data?.length ? (
+        <EmptyState icon={UserCheck} title="All caught up" description="No accounts are waiting for approval." />
       ) : (
-        <div className="space-y-3">
-          {students.map((student) => (
-            <div key={student.id} className="flex items-center justify-between p-4 border border-white/10 rounded-xl bg-slate-900/40 hover:bg-slate-900/60 transition-colors">
-              <div>
-                <p className="font-semibold text-slate-200">{student.name}</p>
-                <p className="text-sm text-slate-400">{student.email}</p>
+        <ul className="divide-y divide-white/[0.05]">
+          {data.map((u) => (
+            <li key={u.id} className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <p className="truncate text-sm font-medium text-slate-100">{u.name}</p>
+                  <Badge tone="blue">{ROLE_LABELS[u.role] ?? u.role}</Badge>
+                </div>
+                <p className="truncate text-xs text-slate-500">{u.email}{u.phone ? ` · ${u.phone}` : ""} · signed up {formatDate(u.createdAt)}</p>
               </div>
-              <div className="space-x-2">
-                <Button 
-                  variant="outline" 
-                  className="text-red-400 border-red-500/30 bg-red-500/10 hover:bg-red-500/20 hover:text-red-300" 
-                  onClick={() => handleApproval(student.id, "REJECTED")}
-                >
-                  Reject
-                </Button>
-                <Button 
-                  className="bg-blue-600 hover:bg-blue-500 text-white shadow-[0_0_15px_rgba(37,99,235,0.3)]" 
-                  onClick={() => handleApproval(student.id, "APPROVED")}
-                >
-                  Approve
-                </Button>
+              <div className="flex gap-2">
+                <Btn size="sm" variant="success" loading={busy === u.id} onClick={() => decide(u, "APPROVED")}><Check className="h-3.5 w-3.5" />Approve</Btn>
+                <Btn size="sm" variant="secondary" disabled={busy === u.id} onClick={() => decide(u, "REJECTED")}><X className="h-3.5 w-3.5" />Reject</Btn>
               </div>
-            </div>
+            </li>
           ))}
-        </div>
+        </ul>
       )}
-    </div>
+    </Card>
   );
 }
