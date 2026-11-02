@@ -13,8 +13,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  DATABASE_URL: postgresql://postgres:postgres@localhost:5432/astra_ci
-  DATABASE_URL_UNPOOLED: postgresql://postgres:postgres@localhost:5432/astra_ci
+  DATABASE_URL: postgresql://postgres@localhost:5432/astra_ci
+  DATABASE_URL_UNPOOLED: postgresql://postgres@localhost:5432/astra_ci
   NEXTAUTH_SECRET: ci-only-secret-not-used-in-production
   NEXTAUTH_URL: http://localhost:3000
 
@@ -27,7 +27,8 @@ jobs:
       postgres:
         image: postgres:16
         env:
-          POSTGRES_PASSWORD: postgres
+          # Throwaway container: passwordless trust auth, so no credential lives in the repo
+          POSTGRES_HOST_AUTH_METHOD: trust
           POSTGRES_DB: astra_ci
         ports: ["5432:5432"]
         options: >-
@@ -59,7 +60,8 @@ jobs:
       postgres:
         image: postgres:16
         env:
-          POSTGRES_PASSWORD: postgres
+          # Throwaway container: passwordless trust auth, so no credential lives in the repo
+          POSTGRES_HOST_AUTH_METHOD: trust
           POSTGRES_DB: astra_ci
         ports: ["5432:5432"]
         options: >-
