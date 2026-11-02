@@ -27,7 +27,8 @@ export async function POST(request: Request) {
     if (!user || !user.phone || user.status !== "APPROVED") return NextResponse.json(GENERIC);
 
     const recent = await prisma.passwordReset.count({ where: { userId: user.id, createdAt: { gte: new Date(Date.now() - 60 * 60 * 1000) } } });
-    if (recent >= MAX_CODES_PER_HOUR) return jsonError("Too many codes requested. Please wait an hour and try again.", 429);
+    // Quietly stop sending; a distinct error would reveal that the account exists
+    if (recent >= MAX_CODES_PER_HOUR) return NextResponse.json(GENERIC);
 
     const code = crypto.randomInt(0, 1_000_000).toString().padStart(6, "0");
     await prisma.passwordReset.create({
@@ -60,12 +61,14 @@ export async function PUT(request: Request) {
       where: { userId: user.id, usedAt: null, expiresAt: { gt: new Date() } },
       orderBy: { createdAt: "desc" },
     });
-    if (!reset || reset.attempts >= MAX_GUESSES) return invalid;
+    if (!reset) return invalid;
 
-    if (!(await bcrypt.compare(code.trim(), reset.codeHash))) {
-      await prisma.passwordReset.update({ where: { id: reset.id }, data: { attempts: { increment: 1 } } });
-      return invalid;
-    }
+    // Spend a guess atomically before comparing, so parallel requests can't exceed the limit
+    const { count } = await prisma.passwordReset.updateMany({
+      where: { id: reset.id, attempts: { lt: MAX_GUESSES } },
+      data: { attempts: { increment: 1 } },
+    });
+    if (count !== 1 || !(await bcrypt.compare(code.trim(), reset.codeHash))) return invalid;
 
     await prisma.$transaction([
       // A new sessionId no device holds signs out every existing session (see SessionGuard)

@@ -5,7 +5,7 @@ import { jsonError, requireRole, safeJson, tenantWhere } from "@/lib/api";
 import { ADMIN_ROLES } from "@/lib/roles";
 import { retryNotification } from "@/lib/messaging";
 
-/** Admin: delivery log. ?status=SENT|FAILED|SKIPPED&type=RESULT|… */
+/** Admin: delivery log. ?status=DELIVERED,READ (comma-separated) &type=RESULT|… */
 export async function GET(request: Request) {
   try {
     const { session, error } = await requireRole(ADMIN_ROLES);
@@ -15,7 +15,7 @@ export async function GET(request: Request) {
     const where: Prisma.NotificationLogWhereInput = { ...tenantWhere(session) };
     const status = params.get("status");
     const type = params.get("type");
-    if (status) where.status = status;
+    if (status) where.status = { in: status.split(",") };
     if (type) where.type = type;
 
     const [logs, counts] = await Promise.all([

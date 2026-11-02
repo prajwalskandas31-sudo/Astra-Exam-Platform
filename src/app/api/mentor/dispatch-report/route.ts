@@ -36,7 +36,7 @@ export async function POST(req: Request) {
       studentName: attempt.user.name,
       testTitle: attempt.test.title,
       message: result.sent > 0
-        ? `Report sent to ${result.sent} of ${result.recipients} recipient${result.recipients === 1 ? "" : "s"}`
+        ? `Report accepted for delivery to ${result.sent} of ${result.recipients} recipient${result.recipients === 1 ? "" : "s"} — delivery is confirmed in Notification Logs`
         : `Report link created, but nothing was delivered — check Notification Logs for the reason`,
     });
   } catch (error) {

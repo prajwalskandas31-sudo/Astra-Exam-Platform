@@ -68,3 +68,20 @@ describe("daysUntil", () => {
   it("counts calendar days", () => assert.equal(daysUntil(new Date("2026-11-20T08:00:00Z"), new Date("2026-11-10T23:00:00Z")), 10));
   it("null without a date", () => assert.equal(daysUntil(null), null));
 });
+
+describe("report tokens", () => {
+  it("round-trips and rejects tampering", async () => {
+    process.env.NEXTAUTH_SECRET ??= "unit-test-secret";
+    const { generateReportToken, verifyReportToken } = await import("../../src/lib/reportTokens");
+    const token = generateReportToken("attempt-1", "student-1");
+    assert.equal(verifyReportToken(token)?.attemptId, "attempt-1");
+    // Flip every hex digit in turn: none may yield a payload, and none may throw
+    for (let i = 0; i < token.length; i++) {
+      if (token[i] === ":") continue;
+      const flipped = token.slice(0, i) + (token[i] === "0" ? "1" : "0") + token.slice(i + 1);
+      const result = verifyReportToken(flipped);
+      assert.ok(result === null || (typeof result.attemptId === "string" && typeof result.studentId === "string"));
+    }
+    assert.equal(verifyReportToken("garbage"), null);
+  });
+});

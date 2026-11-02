@@ -15,7 +15,7 @@ interface Log {
   type: string;
   channel: string;
   provider: string | null;
-  status: "SENT" | "FAILED" | "SKIPPED";
+  status: "ACCEPTED" | "DELIVERED" | "READ" | "FAILED" | "SKIPPED" | "SENT";
   error: string | null;
   attempts: number;
   reportUrl: string | null;
@@ -23,7 +23,17 @@ interface Log {
   payload: { messageText?: string; recipientName?: string };
 }
 
-type StatusFilter = "ALL" | "SENT" | "FAILED" | "SKIPPED";
+// "SENT" only appears on logs from the old simulator, which never delivered anything
+type StatusFilter = "ALL" | "DELIVERED,READ" | "ACCEPTED" | "FAILED" | "SKIPPED,SENT";
+
+const STATUS_BADGE: Record<string, { label: string; tone: "emerald" | "blue" | "rose" | "slate" | "violet" }> = {
+  READ: { label: "read", tone: "violet" },
+  DELIVERED: { label: "delivered", tone: "emerald" },
+  ACCEPTED: { label: "awaiting delivery report", tone: "blue" },
+  SENT: { label: "simulated — never delivered", tone: "slate" },
+  FAILED: { label: "failed", tone: "rose" },
+  SKIPPED: { label: "skipped", tone: "slate" },
+};
 
 const TYPE_LABELS: Record<string, string> = {
   RESULT: "Result",
@@ -63,7 +73,7 @@ export default function NotificationLogsPage() {
     <div className="space-y-6">
       <PageHeader
         title="Notification Logs"
-        description="Every WhatsApp and SMS message sent to students and parents, with delivery status."
+        description="Every WhatsApp and SMS message to students and parents. Providers confirm delivery shortly after accepting a message."
         actions={<Link href="/admin/messaging"><Btn variant="secondary">Messaging settings</Btn></Link>}
       />
 
@@ -78,10 +88,11 @@ export default function NotificationLogsPage() {
           value={status}
           onChange={setStatus}
           items={[
-            { id: "ALL", label: "All", count: (counts.SENT ?? 0) + (counts.FAILED ?? 0) + (counts.SKIPPED ?? 0) },
-            { id: "SENT", label: "Sent", count: counts.SENT ?? 0 },
+            { id: "ALL", label: "All", count: Object.values(counts).reduce((a, b) => a + b, 0) },
+            { id: "DELIVERED,READ", label: "Delivered", count: (counts.DELIVERED ?? 0) + (counts.READ ?? 0) },
+            { id: "ACCEPTED", label: "Awaiting confirmation", count: counts.ACCEPTED ?? 0 },
             { id: "FAILED", label: "Failed", count: counts.FAILED ?? 0 },
-            { id: "SKIPPED", label: "Skipped", count: counts.SKIPPED ?? 0 },
+            { id: "SKIPPED,SENT", label: "Skipped", count: (counts.SKIPPED ?? 0) + (counts.SENT ?? 0) },
           ]}
         />
         {retryable.length > 0 && (
@@ -106,7 +117,7 @@ export default function NotificationLogsPage() {
                   </p>
                 </div>
                 <Badge tone={l.channel === "SMS" ? "violet" : "emerald"}>{l.channel === "SMS" ? "SMS" : "WhatsApp"}</Badge>
-                <Badge tone={l.status === "SENT" ? "blue" : l.status === "FAILED" ? "rose" : "slate"}>{l.status.toLowerCase()}{l.attempts > 1 ? ` ×${l.attempts}` : ""}</Badge>
+                <Badge tone={STATUS_BADGE[l.status]?.tone ?? "slate"}>{STATUS_BADGE[l.status]?.label ?? l.status.toLowerCase()}{l.attempts > 1 ? ` ×${l.attempts}` : ""}</Badge>
                 <ChevronDown className={cn("h-4 w-4 text-slate-500 transition", open === l.id && "rotate-180")} />
               </button>
               {open === l.id && (
@@ -115,7 +126,7 @@ export default function NotificationLogsPage() {
                   <div className="flex flex-wrap items-center gap-3 text-xs">
                     {l.provider && <span className="text-slate-500">via {l.provider}</span>}
                     {l.reportUrl && <a href={l.reportUrl} target="_blank" rel="noopener noreferrer" className="font-semibold text-blue-400 hover:underline">Open link →</a>}
-                    {l.status !== "SENT" && l.type !== "PASSWORD_RESET" && (
+                    {(l.status === "FAILED" || l.status === "SKIPPED") && l.type !== "PASSWORD_RESET" && (
                       <Btn size="sm" variant="secondary" loading={retrying === l.id} disabled={!!retrying} onClick={() => retry([l.id], l.id)}>
                         <RotateCcw className="h-3.5 w-3.5" />Retry
                       </Btn>

@@ -27,12 +27,15 @@ export function verifyReportToken(token: string): ReportTokenPayload | null {
     const decipher = crypto.createDecipheriv("aes-256-cbc", crypto.scryptSync(SECRET, "salt", 32), iv);
     let decrypted = decipher.update(encryptedText, "hex", "utf8");
     decrypted += decipher.final("utf8");
-    const payload: ReportTokenPayload = JSON.parse(decrypted);
-
+    const payload = JSON.parse(decrypted) as Partial<ReportTokenPayload>;
+    // A tampered token can still decrypt to JSON; only a complete, unexpired payload counts
+    if (typeof payload?.attemptId !== "string" || typeof payload.studentId !== "string" || typeof payload.expiresAt !== "number") {
+      return null;
+    }
     if (Date.now() > payload.expiresAt) {
       return null;
     }
-    return payload;
+    return payload as ReportTokenPayload;
   } catch {
     return null;
   }

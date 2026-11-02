@@ -45,7 +45,8 @@ export async function sendResult(attemptId: string, baseUrl: string, audience?: 
   const message = (recipientName: string): OutgoingMessage => ({
     organizationId: attempt.user.organizationId,
     kind: "RESULT",
-    variables: [firstName(recipientName), firstName(attempt.user.name), attempt.test.title, score, link],
+    // Full name reads naturally whether the message goes to the student or a parent
+    variables: [firstName(recipientName), attempt.user.name, attempt.test.title, score, link],
     reportUrl: link,
   });
 
@@ -56,7 +57,8 @@ export async function sendResult(attemptId: string, baseUrl: string, audience?: 
   const results = await notifyMany(items);
   return {
     recipients: items.length,
-    sent: results.filter((r) => r.whatsapp === "SENT" || r.sms === "SENT").length,
+    // Accepted by a provider on at least one channel (delivery is confirmed later by webhook)
+    sent: results.filter((r) => r.whatsapp === "ACCEPTED" || r.sms === "ACCEPTED").length,
     link,
   };
 }
@@ -102,10 +104,14 @@ export async function sendTestAssigned(testId: string, baseUrl: string) {
 export async function sendWeeklyDigests(baseUrl = appBaseUrl()) {
   const orgs = await prisma.organization.findMany({ select: { id: true, whatsappConfig: true } });
   const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  // Today plus the six days before it: exactly seven calendar days
+  const firstDay = dayKey(new Date(Date.now() - 6 * 24 * 60 * 60 * 1000));
   let recipients = 0;
 
   for (const org of orgs) {
-    if (!parseConfig(org.whatsappConfig).rules.weeklyDigest) continue;
+    const config = parseConfig(org.whatsappConfig);
+    // A weekly batch of "not configured" log rows would only bury the useful ones
+    if (!config.rules.weeklyDigest || (config.whatsapp.provider === "OFF" && config.sms.provider === "OFF")) continue;
 
     const students = await prisma.user.findMany({
       where: { role: "STUDENT", status: "APPROVED", organizationId: org.id },
@@ -122,7 +128,7 @@ export async function sendWeeklyDigests(baseUrl = appBaseUrl()) {
 
     const items: { recipient: Recipient; message: OutgoingMessage }[] = [];
     for (const s of students) {
-      const week = s.studyLogs.filter((l) => l.day >= dayKey(since));
+      const week = s.studyLogs.filter((l) => l.day >= firstDay);
       const questions = week.reduce((n, l) => n + l.questions + l.reviews, 0);
       const avg = s.attempts.length ? Math.round(s.attempts.reduce((n, a) => n + (a.percentage ?? 0), 0) / s.attempts.length) : null;
       const streak = computeStreak(s.studyLogs.map((l) => l.day)).current;
@@ -134,7 +140,7 @@ export async function sendWeeklyDigests(baseUrl = appBaseUrl()) {
       const msg = (name: string): OutgoingMessage => ({
         organizationId: org.id,
         kind: "WEEKLY_REPORT",
-        variables: [firstName(name), firstName(s.name), summary, link],
+        variables: [firstName(name), s.name, summary, link],
         reportUrl: link,
       });
       for (const { parent } of s.studentLinks) items.push({ recipient: toRecipient(parent), message: msg(parent.name) });

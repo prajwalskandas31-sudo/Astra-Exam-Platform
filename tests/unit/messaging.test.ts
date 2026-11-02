@@ -144,3 +144,13 @@ describe("provider adapters", () => {
     assert.deepEqual(res, { ok: false, error: "ECONNRESET" });
   });
 });
+
+describe("secret hardening", () => {
+  it("never saves a masked or mangled secret over the real one", () => {
+    const cfg = defaultConfig();
+    cfg.whatsapp.meta.accessToken = "EAAreal";
+    for (const bad of ["••••1234", "\uFFFD\uFFFD\uFFFD\uFFFD1234", "has space", "tab\there"]) {
+      assert.equal(applyUpdate(cfg, { whatsapp: { meta: { accessToken: bad } } }).whatsapp.meta.accessToken, "EAAreal", bad);
+    }
+  });
+});

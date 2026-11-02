@@ -55,10 +55,13 @@ export async function sendTwilio(
   cfg: { accountSid: string; authToken: string; from: string },
   to: string,
   message: { contentSid: string; variables: string[] } | { body: string },
-  whatsapp: boolean
+  whatsapp: boolean,
+  statusCallback?: string
 ): Promise<SendResult> {
   try {
     const form = new URLSearchParams();
+    // Twilio posts delivered/failed updates here
+    if (statusCallback) form.set("StatusCallback", statusCallback);
     form.set("To", whatsapp ? `whatsapp:${to}` : to);
     // A Messaging Service SID (MG…) goes in MessagingServiceSid; a phone number goes in From
     if (cfg.from.startsWith("MG")) form.set("MessagingServiceSid", cfg.from);

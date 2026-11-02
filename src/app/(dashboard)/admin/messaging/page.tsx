@@ -13,6 +13,7 @@ interface Response {
   templateVariables: Record<MessageKind, string[]>;
   last30Days: Record<string, number>;
   coverage: { students: number; studentsNoPhone: number; parentsNoPhone: number; studentsNoParent: number };
+  webhooks: { twilio: string; meta: string; msg91: string } | null;
 }
 
 const KIND_LABELS: Record<MessageKind, string> = {
@@ -67,7 +68,7 @@ export default function MessagingSettingsPage() {
     try {
       const res = await apiFetch<{ details: { channel: string; status: string; error: string | null }[] }>("/api/organization/messaging", { method: "POST", json: { phone: testPhone } });
       for (const d of res.details) {
-        if (d.status === "SENT") toast.success(`${d.channel}: sent`);
+        if (d.status === "ACCEPTED") toast.success(`${d.channel}: accepted by the provider — check your phone and the logs for delivery`);
         else toast.error(`${d.channel}: ${d.status.toLowerCase()} — ${d.error ?? "unknown error"}`);
       }
     } catch (e) {
@@ -91,9 +92,10 @@ export default function MessagingSettingsPage() {
 
       <div className="flex flex-wrap gap-2 text-xs">
         <span className="text-slate-400">Last 30 days:</span>
-        <Badge tone="emerald">{data.last30Days.SENT ?? 0} sent</Badge>
+        <Badge tone="emerald">{(data.last30Days.DELIVERED ?? 0) + (data.last30Days.READ ?? 0)} delivered</Badge>
+        <Badge tone="blue">{data.last30Days.ACCEPTED ?? 0} awaiting confirmation</Badge>
         <Badge tone="rose">{data.last30Days.FAILED ?? 0} failed</Badge>
-        <Badge>{data.last30Days.SKIPPED ?? 0} skipped</Badge>
+        <Badge>{(data.last30Days.SKIPPED ?? 0) + (data.last30Days.SENT ?? 0)} skipped</Badge>
         <Link href="/admin/notifications" className="font-semibold text-blue-400 hover:text-blue-300">View logs →</Link>
       </div>
 
@@ -208,6 +210,23 @@ export default function MessagingSettingsPage() {
         </Card>
       )}
 
+      {(waActive || cfg.sms.provider !== "OFF") && (
+        <Card>
+          <CardHeader title="Delivery reports" description="Providers confirm when a message is actually delivered. Until then it shows as “awaiting delivery report”." />
+          <div className="space-y-3 p-5 text-xs">
+            {!data.webhooks ? (
+              <p className="text-slate-400">Save your settings to generate this institute&apos;s delivery-report URLs.</p>
+            ) : (
+              <>
+                {(cfg.whatsapp.provider === "TWILIO" || cfg.sms.provider === "TWILIO") && <p className="text-slate-400">Twilio: nothing to set up — the callback URL is sent with every message and its signature is verified.</p>}
+                {cfg.whatsapp.provider === "META" && <WebhookRow label="Meta: WhatsApp Manager → Configuration → Webhook (subscribe to “messages”). Use the URL; the verify token is the key= value in it." url={data.webhooks.meta} />}
+                {cfg.sms.provider === "MSG91" && <WebhookRow label="MSG91: Panel → Webhooks → Delivery report (JSON)." url={data.webhooks.msg91} />}
+              </>
+            )}
+          </div>
+        </Card>
+      )}
+
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader title="Automations" />
@@ -237,6 +256,18 @@ export default function MessagingSettingsPage() {
             <p className="text-xs text-slate-500">Recipients can turn WhatsApp or SMS off under their own Settings. Messages to people without a phone number are logged as skipped so you can follow up.</p>
           </div>
         </Card>
+      </div>
+    </div>
+  );
+}
+
+function WebhookRow({ label, url }: { label: string; url: string }) {
+  return (
+    <div className="space-y-1">
+      <p className="text-slate-400">{label}</p>
+      <div className="flex items-center gap-2 rounded-lg bg-black/30 p-2">
+        <code className="flex-1 truncate font-mono text-slate-300">{url}</code>
+        <Btn size="sm" variant="secondary" onClick={() => navigator.clipboard.writeText(url).then(() => toast.success("Copied"))}>Copy</Btn>
       </div>
     </div>
   );

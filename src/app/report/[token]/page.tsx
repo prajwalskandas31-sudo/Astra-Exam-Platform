@@ -3,7 +3,14 @@ import { prisma } from "@/lib/prisma";
 import { CheckCircle, XCircle, Award, Target, Clock, AlertTriangle } from "lucide-react";
 
 export default async function PublicReportPage({ params }: { params: Promise<{ token: string }> }) {
-  const { token } = await params;
+  const { token: rawToken } = await params;
+  // The ":" separator arrives percent-encoded in the route segment
+  let token = rawToken;
+  try {
+    token = decodeURIComponent(rawToken);
+  } catch {
+    // malformed escape sequence: verification below will reject it
+  }
   const payload = verifyReportToken(token);
 
   if (!payload) {
@@ -21,7 +28,7 @@ export default async function PublicReportPage({ params }: { params: Promise<{ t
   const attempt = await prisma.attempt.findUnique({
     where: { id: payload.attemptId },
     include: {
-      user: true,
+      user: { include: { organization: { select: { name: true } } } },
       test: true,
       answers: {
         include: { question: true }
@@ -29,7 +36,8 @@ export default async function PublicReportPage({ params }: { params: Promise<{ t
     }
   });
 
-  if (!attempt) {
+  // The token names both the attempt and its owner; both must agree
+  if (!attempt || attempt.userId !== payload.studentId) {
     return (
       <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center p-6">
         <div className="text-center space-y-2">
@@ -51,7 +59,7 @@ export default async function PublicReportPage({ params }: { params: Promise<{ t
             A
           </div>
           <div>
-            <h1 className="font-bold text-slate-100 text-sm">Apex Competitive Coaching</h1>
+            <h1 className="font-bold text-slate-100 text-sm">{attempt.user.organization?.name ?? "Astra"}</h1>
             <span className="text-[10px] text-emerald-400 font-semibold uppercase tracking-wider">Verified Official Performance Report</span>
           </div>
         </div>

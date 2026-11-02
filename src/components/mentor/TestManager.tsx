@@ -57,6 +57,20 @@ export function TestManager() {
   const templates = useApi<Template[]>("/api/templates");
   const batches = useApi<{ id: string; name: string }[]>("/api/batches");
   const [batchIds, setBatchIds] = useState<string[]>([]);
+  const [audienceFor, setAudienceFor] = useState<Test | null>(null);
+  const [audienceIds, setAudienceIds] = useState<string[]>([]);
+
+  const saveAudience = async () => {
+    if (!audienceFor) return;
+    try {
+      await apiFetch(`/api/tests/${audienceFor.id}`, { method: "PATCH", json: { batchIds: audienceIds } });
+      toast.success(audienceIds.length ? "Test limited to the selected batches" : "Test opened to every student");
+      setAudienceFor(null);
+      tests.reload();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't update audience");
+    }
+  };
   const [view, setView] = useState<"all" | "live" | "draft" | "archived">("all");
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(emptyForm());
@@ -170,7 +184,14 @@ export function TestManager() {
                     <td className="px-5 py-3">
                       <Link href={`${base}/${t.id}`} className="font-medium text-slate-100 hover:text-blue-300">{t.title}</Link>
                       <p className="text-xs text-slate-500">
-                        {t.template?.name ?? "Custom"} · created {formatDate(t.createdAt)} · {t.batches?.length ? t.batches.map((b) => b.name).join(", ") : "all students"}
+                        {t.template?.name ?? "Custom"} · created {formatDate(t.createdAt)} ·{" "}
+                        <button
+                          onClick={() => { setAudienceFor(t); setAudienceIds(t.batches.map((b) => b.id)); }}
+                          className="underline decoration-dotted underline-offset-2 hover:text-blue-300"
+                          title="Change which batches can see this test"
+                        >
+                          {t.batches?.length ? t.batches.map((b) => b.name).join(", ") : "all students"}
+                        </button>
                       </p>
                     </td>
                     <td className="px-3 py-3">
@@ -206,6 +227,33 @@ export function TestManager() {
           </div>
         </Card>
       )}
+
+      <Modal
+        open={!!audienceFor}
+        onClose={() => setAudienceFor(null)}
+        title="Who can take this test?"
+        description={audienceFor ? `${audienceFor.title} — choose batches, or none for every student in the institute.` : undefined}
+        size="sm"
+        footer={<><Btn variant="secondary" onClick={() => setAudienceFor(null)}>Cancel</Btn><Btn onClick={saveAudience}>Save</Btn></>}
+      >
+        <div className="flex flex-wrap gap-1.5">
+          {(batches.data ?? []).length === 0 && <p className="text-sm text-slate-500">No batches yet — create them under Admin → Batches.</p>}
+          {(batches.data ?? []).map((b) => {
+            const on = audienceIds.includes(b.id);
+            return (
+              <button
+                key={b.id}
+                type="button"
+                aria-pressed={on}
+                onClick={() => setAudienceIds(on ? audienceIds.filter((x) => x !== b.id) : [...audienceIds, b.id])}
+                className={cn("rounded-lg border px-2.5 py-1 text-xs font-medium transition", on ? "border-blue-500/60 bg-blue-500/15 text-blue-200" : "border-white/10 text-slate-400 hover:text-white")}
+              >
+                {b.name}
+              </button>
+            );
+          })}
+        </div>
+      </Modal>
 
       <Modal
         open={open}

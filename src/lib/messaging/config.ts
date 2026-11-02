@@ -13,6 +13,8 @@ export type SmsFallback = "IF_WHATSAPP_FAILS" | "ALWAYS" | "NEVER";
 
 export interface MessagingConfig {
   defaultCountryCode: string; // e.g. "+91", applied to numbers saved without one
+  // Random key in the delivery-report webhook URLs given to providers (not editable)
+  webhookSecret: string;
   whatsapp: {
     provider: WhatsappProvider;
     meta: { phoneNumberId: string; accessToken: string; apiVersion: string; language: string };
@@ -41,6 +43,7 @@ export const SECRET_FIELDS = ["whatsapp.meta.accessToken", "whatsapp.twilio.auth
 export function defaultConfig(): MessagingConfig {
   return {
     defaultCountryCode: "+91",
+    webhookSecret: "",
     whatsapp: {
       provider: "OFF",
       meta: { phoneNumberId: "", accessToken: "", apiVersion: "v21.0", language: "en" },
@@ -121,6 +124,7 @@ const setPath = (obj: unknown, path: string, value: unknown) => {
 /** Copy for the browser: secrets replaced by a hint like "••••a1b2" (or "" when unset). */
 export function maskConfig(cfg: MessagingConfig): MessagingConfig {
   const copy = structuredClone(cfg);
+  copy.webhookSecret = ""; // exposed only inside the full webhook URLs
   for (const path of SECRET_FIELDS) {
     const v = getPath(copy, path);
     setPath(copy, path, typeof v === "string" && v ? `••••${v.slice(-4)}` : "");
@@ -131,9 +135,12 @@ export function maskConfig(cfg: MessagingConfig): MessagingConfig {
 /** Apply an update from the settings form. A masked or empty secret means "keep the saved one". */
 export function applyUpdate(current: MessagingConfig, patch: unknown): MessagingConfig {
   const next = merge(current, patch);
+  next.webhookSecret = current.webhookSecret || crypto.randomBytes(24).toString("base64url");
   for (const path of SECRET_FIELDS) {
     const v = getPath(next, path);
-    if (typeof v !== "string" || !v || v.startsWith("••••")) setPath(next, path, getPath(current, path));
+    // Keep the saved secret for blanks and masked hints; real tokens are printable ASCII, so anything
+    // else (a mask character, or one mangled into U+FFFD in transit) must never overwrite it
+    if (typeof v !== "string" || !v || !/^[!-~]+$/.test(v)) setPath(next, path, getPath(current, path));
   }
   if (!/^\+\d{1,4}$/.test(next.defaultCountryCode)) next.defaultCountryCode = current.defaultCountryCode;
   return next;

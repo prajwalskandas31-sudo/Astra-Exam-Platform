@@ -63,6 +63,7 @@ export async function POST(request: Request) {
     const credentials: { name: string; email: string; role: string; password: string }[] = [];
     const seen = new Set<string>();
     const newBatches = new Set<string>();
+    const plannedParents = new Set<string>(); // dry run: parents an earlier row would already create
 
     for (const [i, raw] of rows.entries()) {
       const rowNo = i + 2; // +1 for 1-based, +1 for the header line in the CSV
@@ -90,7 +91,9 @@ export async function POST(request: Request) {
       if (batchName && !batches.has(batchName.toLowerCase())) newBatches.add(batchName);
 
       if (dryRun) {
-        results.push({ row: rowNo, email, status: student ? "updated" : "created", parent: parentEmail ? (parent ? "linked" : "created") : undefined });
+        const parentPlan = !parentEmail ? undefined : parent || plannedParents.has(parentEmail) ? "linked" : "created";
+        if (parentEmail) plannedParents.add(parentEmail);
+        results.push({ row: rowNo, email, status: student ? "updated" : "created", parent: parentPlan });
         continue;
       }
 

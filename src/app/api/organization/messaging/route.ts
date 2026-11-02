@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { jsonError, requireRole } from "@/lib/api";
 import { ADMIN_ROLES } from "@/lib/roles";
 import { applyUpdate, maskConfig, parseConfig, serializeConfig } from "@/lib/messaging/config";
-import { TEMPLATE_VARIABLES, notify } from "@/lib/messaging";
+import { TEMPLATE_VARIABLES, notify, webhookUrl } from "@/lib/messaging";
 
 async function ownOrg(organizationId?: string | null) {
   return organizationId ? prisma.organization.findUnique({ where: { id: organizationId }, select: { id: true, name: true, whatsappConfig: true } }) : null;
@@ -27,8 +27,13 @@ export async function GET() {
       prisma.user.count({ where: { ...people, role: "STUDENT", studentLinks: { none: {} } } }),
     ]);
 
+    const config = parseConfig(org.whatsappConfig);
     return NextResponse.json({
-      config: maskConfig(parseConfig(org.whatsappConfig)),
+      config: maskConfig(config),
+      // Delivery-report URLs to paste into each provider's console (created on first save)
+      webhooks: config.webhookSecret
+        ? { twilio: webhookUrl("twilio", org.id, config.webhookSecret), meta: webhookUrl("meta", org.id, config.webhookSecret), msg91: webhookUrl("msg91", org.id, config.webhookSecret) }
+        : null,
       templateVariables: TEMPLATE_VARIABLES,
       last30Days: Object.fromEntries(stats.map((s) => [s.status, s._count])),
       // Who these messages can't reach yet
