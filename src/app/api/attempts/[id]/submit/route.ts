@@ -1,9 +1,11 @@
-import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { NextResponse, after } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { NotificationService } from "@/lib/notifications";
-import { generateReportToken } from "@/lib/reportTokens";
+import { requireRole } from "@/lib/api";
+import { appBaseUrl } from "@/lib/reportLinks";
+import { sendResult } from "@/lib/messaging/automations";
+import { gradeAttempt } from "@/lib/scoring";
+import { attemptQuestionFilter, isFinished, serverTimeRemaining } from "@/lib/attempts";
+import { logStudy, queueForReview } from "@/lib/study";
 
 export async function POST(
   request: Request,
@@ -11,29 +13,19 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
-    const session = await getServerSession(authOptions);
-    if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const { session, error } = await requireRole(["STUDENT"]);
+    if (error) return error;
 
     const attempt = await prisma.attempt.findUnique({
       where: { id },
       include: {
-        user: {
-          include: {
-            studentLinks: {
-              include: { parent: true }
-            }
-          }
-        },
         test: {
           include: {
-            questions: {
-              include: { question: true }
-            }
+            questions: { include: { question: true } }
           }
         },
-        answers: {
-          include: { question: true }
-        }
+        answers: true,
+        _count: { select: { violations: true } }
       }
     });
 
@@ -41,166 +33,80 @@ export async function POST(
       return NextResponse.json({ error: "Not Found" }, { status: 404 });
     }
 
-    if (attempt.status === "COMPLETED" || attempt.status === "AUTO_SUBMITTED") {
+    if (isFinished(attempt.status)) {
       return NextResponse.json(attempt);
     }
 
-    const testQuestions = attempt.test.questions;
-
-    let totalScore = 0;
-    let maxPossibleMarks = 0;
-    let attemptedCount = 0;
-    let correctCount = 0;
-    let incorrectCount = 0;
-    let unattemptedCount = 0;
-
-    const subjectData: Record<string, { total: number; correct: number; incorrect: number; score: number; maxScore: number }> = {};
-    const chapterData: Record<string, { total: number; correct: number; incorrect: number; score: number }> = {};
-    const topicData: Record<string, { total: number; correct: number; incorrect: number; score: number }> = {};
-
-    for (const tq of testQuestions) {
-      const q = tq.question;
-      const qMarks = q.marks || 1;
-      const qNeg = q.negativeMarks || 0;
-      const subj = q.subject || "General";
-      const chap = q.chapter || "General";
-      const top = q.topic || "General";
-
-      maxPossibleMarks += qMarks;
-
-      if (!subjectData[subj]) subjectData[subj] = { total: 0, correct: 0, incorrect: 0, score: 0, maxScore: 0 };
-      if (!chapterData[chap]) chapterData[chap] = { total: 0, correct: 0, incorrect: 0, score: 0 };
-      if (!topicData[top]) topicData[top] = { total: 0, correct: 0, incorrect: 0, score: 0 };
-
-      subjectData[subj].total++;
-      subjectData[subj].maxScore += qMarks;
-      chapterData[chap].total++;
-      topicData[top].total++;
-
-      const studentAnswer = attempt.answers.find((a) => a.questionId === q.id);
-
-      if (studentAnswer && studentAnswer.selectedOpt) {
-        attemptedCount++;
-        const isCorrect = studentAnswer.selectedOpt === q.correctOption;
-
-        if (isCorrect) {
-          correctCount++;
-          totalScore += qMarks;
-          subjectData[subj].correct++;
-          subjectData[subj].score += qMarks;
-          chapterData[chap].correct++;
-          chapterData[chap].score += qMarks;
-          topicData[top].correct++;
-          topicData[top].score += qMarks;
-        } else {
-          incorrectCount++;
-          totalScore -= qNeg;
-          subjectData[subj].incorrect++;
-          subjectData[subj].score -= qNeg;
-          chapterData[chap].incorrect++;
-          chapterData[chap].score -= qNeg;
-          topicData[top].incorrect++;
-          topicData[top].score -= qNeg;
-        }
-
-        await prisma.answer.update({
-          where: { id: studentAnswer.id },
-          data: {
-            isCorrect,
-            status: "SAVED",
-            subject: subj,
-            chapter: chap,
-            topic: top
-          }
-        });
-      } else {
-        unattemptedCount++;
-      }
+    let reason: string | undefined;
+    try {
+      reason = (await request.json())?.reason;
+    } catch {
+      // empty body is fine
     }
 
-    const percentage = maxPossibleMarks > 0 ? (totalScore / maxPossibleMarks) * 100 : 0;
-    const accuracy = attemptedCount > 0 ? (correctCount / attemptedCount) * 100 : 0;
+    const questions = attemptQuestionFilter(attempt, attempt.test.questions).map((tq) => tq.question);
+    const result = gradeAttempt(questions, attempt.answers);
 
-    // Weak and Strong topic identification
-    const weakTopicsList: string[] = [];
-    const strongTopicsList: string[] = [];
+    // Persist per-answer correctness so reviews, mistakes and analytics can use it
+    await prisma.$transaction(
+      attempt.answers
+        .filter((a) => result.perQuestion[a.questionId])
+        .map((a) => {
+          const pq = result.perQuestion[a.questionId];
+          return prisma.answer.update({
+            where: { id: a.id },
+            data: { isCorrect: pq.isCorrect, subject: pq.subject, chapter: pq.chapter, topic: pq.topic }
+          });
+        })
+    );
 
-    Object.entries(topicData).forEach(([topName, stats]) => {
-      const topAccuracy = stats.total > 0 ? (stats.correct / stats.total) * 100 : 0;
-      if (topAccuracy < 60) {
-        weakTopicsList.push(topName);
-      } else if (topAccuracy >= 80) {
-        strongTopicsList.push(topName);
-      }
+    const finishedAttempts = await prisma.attempt.findMany({
+      where: { testId: attempt.testId, status: { in: ["COMPLETED", "AUTO_SUBMITTED"] }, isRetry: false, id: { not: id } },
+      select: { score: true }
     });
+    const higher = finishedAttempts.filter((a) => (a.score ?? 0) > result.score).length;
+    const lowerOrEqual = finishedAttempts.length - higher;
+    const rank = higher + 1;
+    const percentile = finishedAttempts.length > 0 ? Math.round((lowerOrEqual / finishedAttempts.length) * 1000) / 10 : 100;
 
-    // Calculate Rank
-    const higherScoreAttemptsCount = await prisma.attempt.count({
-      where: {
-        testId: attempt.testId,
-        status: { in: ["COMPLETED", "AUTO_SUBMITTED"] },
-        score: { gt: totalScore }
-      }
-    });
-    const rank = higherScoreAttemptsCount + 1;
+    const timedOut = serverTimeRemaining(attempt, attempt.test.duration) <= 0;
+    const autoSubmitted = timedOut || reason === "VIOLATIONS" || reason === "TIMEOUT";
 
-    // Update Attempt with complete metrics
     const updatedAttempt = await prisma.attempt.update({
       where: { id },
       data: {
-        status: "COMPLETED",
-        score: totalScore,
-        percentage,
-        accuracy,
-        attemptedCount,
-        correctCount,
-        incorrectCount,
-        unattemptedCount,
+        status: autoSubmitted ? "AUTO_SUBMITTED" : "COMPLETED",
+        score: result.score,
+        percentage: result.percentage,
+        accuracy: result.accuracy,
+        attemptedCount: result.attemptedCount,
+        correctCount: result.correctCount,
+        incorrectCount: result.incorrectCount,
+        unattemptedCount: result.unattemptedCount,
         rank,
-        subjectScores: JSON.stringify(subjectData),
-        chapterScores: JSON.stringify(chapterData),
-        topicScores: JSON.stringify(topicData),
-        weakTopics: JSON.stringify(weakTopicsList),
-        strongTopics: JSON.stringify(strongTopicsList),
+        percentile,
+        subjectScores: JSON.stringify(result.subjectScores),
+        chapterScores: JSON.stringify(result.chapterScores),
+        topicScores: JSON.stringify(result.topicScores),
+        weakTopics: JSON.stringify(result.weakTopics),
+        strongTopics: JSON.stringify(result.strongTopics),
         endTime: new Date()
       }
     });
 
-    // Generate encrypted report URL for notification
-    const reportToken = generateReportToken(attempt.id, attempt.userId);
-    const domain = process.env.NEXTAUTH_URL || "http://localhost:3000";
-    const reportUrl = `${domain}/report/${reportToken}`;
+    // Feed the study loop: missed questions go to spaced review, answered ones count toward today's goal
+    const missed = Object.entries(result.perQuestion)
+      .filter(([, pq]) => pq.isCorrect === false)
+      .map(([questionId]) => questionId);
+    await Promise.all([
+      queueForReview(attempt.userId, missed),
+      logStudy(attempt.userId, { questions: result.attemptedCount }),
+    ]).catch((e) => console.error("[SUBMIT_STUDY_LOG]", e));
 
-    // Dispatch WhatsApp notifications to linked parents & student
-    if (attempt.user.phone) {
-      await NotificationService.sendNotification({
-        recipientPhone: attempt.user.phone,
-        recipientName: attempt.user.name,
-        type: "RESULT_NOTIFICATION",
-        testTitle: attempt.test.title,
-        score: totalScore,
-        accuracy: Math.round(accuracy * 10) / 10,
-        rank,
-        reportUrl
-      }).catch(console.error);
-    }
-
-    if (attempt.user.studentLinks) {
-      for (const link of attempt.user.studentLinks) {
-        if (link.parent.phone) {
-          await NotificationService.sendNotification({
-            recipientPhone: link.parent.phone,
-            recipientName: link.parent.name,
-            type: "RESULT_NOTIFICATION",
-            testTitle: attempt.test.title,
-            score: totalScore,
-            accuracy: Math.round(accuracy * 10) / 10,
-            rank,
-            reportUrl
-          }).catch(console.error);
-        }
-      }
-    }
+    // Result alert with a short report link to the student and linked parents (WhatsApp/SMS),
+    // sent after the response so the student sees their result immediately
+    const baseUrl = appBaseUrl(request);
+    after(() => sendResult(attempt.id, baseUrl).catch((e) => console.error("[SUBMIT_RESULT_ALERT]", e)));
 
     return NextResponse.json(updatedAttempt);
   } catch (error) {
@@ -208,5 +114,3 @@ export async function POST(
     return NextResponse.json({ error: "Internal Error" }, { status: 500 });
   }
 }
-
-

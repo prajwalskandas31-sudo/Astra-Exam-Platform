@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 test('has title', async ({ page }) => {
-  await page.goto('http://localhost:3000/');
+  await page.goto('/');
   
   // Verify the page title or a specific element on the homepage
   // The actual title might differ, assuming it's part of the layout
@@ -9,7 +9,7 @@ test('has title', async ({ page }) => {
 });
 
 test('has login link', async ({ page }) => {
-  await page.goto('http://localhost:3000/');
+  await page.goto('/');
   
   // Look for a login button or link
   const loginLink = page.getByRole('link', { name: /login/i });

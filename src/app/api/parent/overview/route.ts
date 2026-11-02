@@ -1,112 +1,101 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { requireRole, safeJson } from "@/lib/api";
+import { getStudySnapshot } from "@/lib/studySnapshot";
+
+const round1 = (n: number) => Math.round(n * 10) / 10;
 
 export async function GET() {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session || session.user.role !== "PARENT") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const { session, error } = await requireRole(["PARENT"]);
+    if (error) return error;
 
-    // Fetch linked students for this parent
-    let parentLinks = await prisma.parentStudentLink.findMany({
+    const parentLinks = await prisma.parentStudentLink.findMany({
       where: { parentId: session.user.id },
       include: {
         student: {
-          include: {
-            batch: true,
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            organizationId: true,
+            batch: { select: { name: true } },
             attempts: {
+              where: { status: { in: ["COMPLETED", "AUTO_SUBMITTED"] } },
               orderBy: { createdAt: "desc" },
-              include: { test: true }
+              include: { test: { select: { id: true, title: true, totalMarks: true, type: true, mode: true } } }
             }
           }
         }
-      }
+      },
+      orderBy: { createdAt: "asc" }
     });
 
-    // If no links exist yet, automatically fetch or link student accounts for demo view
-    if (parentLinks.length === 0) {
-      const allStudents = await prisma.user.findMany({
-        where: { role: "STUDENT" },
-        include: {
-          batch: true,
-          attempts: {
-            orderBy: { createdAt: "desc" },
-            include: { test: true }
-          }
-        },
-        take: 2
-      });
+    const studySnapshots = await Promise.all(parentLinks.map(({ student: s }) => getStudySnapshot(s.id, s.organizationId)));
 
-      // Auto link for seamless parent experience
-      for (const st of allStudents) {
-        try {
-          await prisma.parentStudentLink.create({
-            data: {
-              parentId: session.user.id,
-              studentId: st.id
-            }
-          });
-        } catch (e) {
-          // ignore duplicate link errors
+    const studentsOverview = parentLinks.map(({ student: s }, index) => {
+      const completed = s.attempts;
+      const latest = completed[0] || null;
+      const avgPercentage = completed.length > 0
+        ? completed.reduce((acc, a) => acc + (a.percentage || 0), 0) / completed.length
+        : 0;
+      const avgAccuracy = completed.length > 0
+        ? completed.reduce((acc, a) => acc + (a.accuracy || 0), 0) / completed.length
+        : 0;
+
+      // Count how often each topic was flagged weak, most recent attempts first
+      const weakCounts = new Map<string, number>();
+      for (const a of completed) {
+        for (const t of safeJson<string[]>(a.weakTopics, [])) weakCounts.set(t, (weakCounts.get(t) || 0) + 1);
+      }
+      const weakTopics = [...weakCounts.entries()].sort((x, y) => y[1] - x[1]).map(([t]) => t).slice(0, 8);
+
+      const subjectTotals: Record<string, { correct: number; total: number }> = {};
+      for (const a of completed) {
+        const subj = safeJson<Record<string, { correct: number; total: number }>>(a.subjectScores, {});
+        for (const [name, st] of Object.entries(subj)) {
+          subjectTotals[name] ??= { correct: 0, total: 0 };
+          subjectTotals[name].correct += st.correct || 0;
+          subjectTotals[name].total += st.total || 0;
         }
       }
-
-      // Re-fetch parent links
-      parentLinks = await prisma.parentStudentLink.findMany({
-        where: { parentId: session.user.id },
-        include: {
-          student: {
-            include: {
-              batch: true,
-              attempts: {
-                orderBy: { createdAt: "desc" },
-                include: { test: true }
-              }
-            }
-          }
-        }
-      });
-    }
-
-    const studentsOverview = parentLinks.map((link) => {
-      const s = link.student;
-      const completed = s.attempts;
-
-      const latestAttempt = completed[0] || null;
-      const totalScoreSum = completed.reduce((acc, a) => acc + (a.score || 0), 0);
-      const avgScore = completed.length > 0 ? totalScoreSum / completed.length : 0;
-
-      // Extract weak chapters across attempts
-      const allWeakTopics = completed.flatMap((a) => a.weakTopics ? JSON.parse(a.weakTopics) : []);
-      const uniqueWeakTopics = Array.from(new Set(allWeakTopics)).slice(0, 5);
 
       return {
         id: s.id,
         name: s.name,
         email: s.email,
-        batch: s.batch?.name || "Achievers Batch 2026",
+        batch: s.batch?.name || "Unassigned",
         totalTestsAttempted: completed.length,
-        avgScore: Math.round(avgScore * 10) / 10,
-        latestTest: latestAttempt ? {
-          title: latestAttempt.test.title,
-          score: Math.round((latestAttempt.score || 0) * 10) / 10,
-          accuracy: Math.round((latestAttempt.accuracy || 0) * 10) / 10,
-          rank: latestAttempt.rank || 1,
-          date: latestAttempt.createdAt
+        avgScore: round1(avgPercentage),
+        avgAccuracy: round1(avgAccuracy),
+        latestTest: latest ? {
+          title: latest.test.title,
+          score: round1(latest.score || 0),
+          percentage: round1(latest.percentage || 0),
+          accuracy: round1(latest.accuracy || 0),
+          rank: latest.rank,
+          date: latest.createdAt
         } : null,
-        weakTopics: uniqueWeakTopics.length > 0 ? uniqueWeakTopics : ["Rotational Dynamics", "Chemical Kinetics", "Integration"],
+        weakTopics,
+        study: studySnapshots[index],
+        subjects: Object.entries(subjectTotals).map(([name, st]) => ({
+          name,
+          accuracy: st.total > 0 ? round1((st.correct / st.total) * 100) : 0,
+          questions: st.total
+        })),
         attempts: completed.map((a) => ({
           id: a.id,
           test: a.test,
-          score: Math.round((a.score || 0) * 10) / 10,
-          accuracy: Math.round((a.accuracy || 0) * 10) / 10,
-          percentage: a.percentage ? Math.round(a.percentage * 10) / 10 : 82.5,
-          rank: a.rank || 1,
+          score: round1(a.score || 0),
+          accuracy: round1(a.accuracy || 0),
+          percentage: round1(a.percentage || 0),
+          rank: a.rank,
+          percentile: a.percentile,
+          isRetry: a.isRetry,
           createdAt: a.createdAt,
-          mentorComment: a.mentorComment || "Strong attempt with consistent time management."
+          weakTopics: safeJson<string[]>(a.weakTopics, []),
+          strongTopics: safeJson<string[]>(a.strongTopics, []),
+          mentorComment: a.mentorComment
         }))
       };
     });
@@ -120,5 +109,3 @@ export async function GET() {
     return NextResponse.json({ error: "Internal Error" }, { status: 500 });
   }
 }
-
-

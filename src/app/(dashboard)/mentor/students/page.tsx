@@ -1,480 +1,220 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Button } from "@/components/ui/button";
-import { 
-  Users, 
-  Search, 
-  BookOpen, 
-  Award, 
-  FileText, 
-  Download, 
-  CheckCircle2, 
-  MessageSquare, 
-  ArrowLeft,
-  Send,
-  Filter,
-  Layers,
-  Sparkles,
-  ExternalLink,
-  Clock,
-  AlertTriangle
-} from "lucide-react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import Link from "next/link";
+import { ChevronRight, Copy, MessageSquare, Search, Send, Users } from "lucide-react";
+import { TestReview } from "@/components/student/TestReview";
+import { Badge, Btn, Card, CardHeader, EmptyState, ErrorState, Modal, PageHeader, PageLoader, Tabs, formatDate, inputClass, scoreTone } from "@/components/ui/kit";
+import { apiFetch, useApi } from "@/lib/fetcher";
+import { cn } from "@/lib/utils";
+
+interface StudentAttempt {
+  id: string;
+  status: string;
+  isRetry: boolean;
+  score: number | null;
+  percentage: number | null;
+  accuracy: number | null;
+  rank: number | null;
+  mentorComment: string | null;
+  weakTopics: string | null;
+  createdAt: string;
+  test: { id: string; title: string; type: string; mode: string };
+}
+
+interface Student {
+  id: string;
+  name: string;
+  email: string;
+  phone: string | null;
+  batch: { id: string; name: string } | null;
+  studentLinks: { parent: { id: string; name: string; phone: string | null; email: string } }[];
+  attempts: StudentAttempt[];
+}
+
+const finished = (a: StudentAttempt) => a.status === "COMPLETED" || a.status === "AUTO_SUBMITTED";
 
 export default function MentorStudentsPage() {
-  const [students, setStudents] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  
-  // Filters
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedExamCategory, setSelectedExamCategory] = useState("ALL");
-  const [selectedBatch, setSelectedBatch] = useState("ALL");
-  const [selectedPerformanceTier, setSelectedPerformanceTier] = useState("ALL");
-
-  const [selectedStudent, setSelectedStudent] = useState<any>(null);
-  const [selectedAttempt, setSelectedAttempt] = useState<any>(null);
+  const { data, setData, error, loading, reload } = useApi<Student[]>("/api/mentor/students");
+  const [query, setQuery] = useState("");
+  const [batch, setBatch] = useState("ALL");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState<StudentAttempt | null>(null);
+  const [tab, setTab] = useState<"feedback" | "review">("feedback");
   const [comment, setComment] = useState("");
-  const [savingComment, setSavingComment] = useState(false);
-  const [dispatchingReport, setDispatchingReport] = useState(false);
-  const [dispatchedUrl, setDispatchedUrl] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [reportUrl, setReportUrl] = useState<string | null>(null);
 
-  const examCategories = ["ALL", "JEE", "NEET", "GATE", "AFCAT", "PLAB", "COMEDK", "SSC CGL"];
-  const batches = ["ALL", "JEE 2026 Batch A", "NEET Achievers 2026", "AFCAT Warriors", "COMEDK FastTrack"];
-  const performanceTiers = ["ALL", "TOP (≥75%)", "MODERATE (50-74%)", "LOW (<50%)"];
+  const students = data ?? [];
+  const batches = useMemo(() => Array.from(new Set(students.map((s) => s.batch?.name).filter(Boolean))) as string[], [students]);
+  const rows = students
+    .map((s) => {
+      const done = s.attempts.filter((a) => finished(a) && !a.isRetry);
+      const avg = done.length ? done.reduce((sum, a) => sum + (a.percentage || 0), 0) / done.length : null;
+      return { ...s, done, avg };
+    })
+    .filter((s) =>
+      (batch === "ALL" || (batch === "NONE" ? !s.batch : s.batch?.name === batch)) &&
+      (!query || `${s.name} ${s.email}`.toLowerCase().includes(query.toLowerCase()))
+    );
+  const selected = rows.find((s) => s.id === selectedId) ?? null;
 
-  const fetchStudents = async () => {
+  const openAttempt = (a: StudentAttempt) => {
+    setAttempt(a);
+    setComment(a.mentorComment ?? "");
+    setReportUrl(null);
+    setTab("feedback");
+  };
+
+  const saveComment = async () => {
+    if (!attempt) return;
+    setBusy("comment");
     try {
-      const res = await fetch("/api/mentor/students");
-      if (res.ok) {
-        const data = await res.json();
-        setStudents(data);
-      }
-    } catch (err) {
-      console.error(err);
+      await apiFetch(`/api/attempts/${attempt.id}/comment`, { method: "PATCH", json: { comment } });
+      setData(students.map((s) => ({ ...s, attempts: s.attempts.map((a) => (a.id === attempt.id ? { ...a, mentorComment: comment } : a)) })));
+      toast.success("Feedback saved — the student can see it in their review");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't save feedback");
     } finally {
-      setLoading(false);
+      setBusy(null);
     }
   };
 
-  useEffect(() => {
-    fetchStudents();
-  }, []);
-
-  const handleSaveComment = async () => {
-    if (!selectedAttempt) return;
-    setSavingComment(true);
+  const dispatch = async (audience: "PARENTS" | "STUDENT" | "BOTH") => {
+    if (!attempt) return;
+    setBusy(audience);
     try {
-      const res = await fetch(`/api/attempts/${selectedAttempt.id}/comment`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ comment })
-      });
-      if (res.ok) {
-        toast.success("Mentor feedback saved successfully!");
-        fetchStudents();
-        setSelectedAttempt({ ...selectedAttempt, mentorComment: comment });
-      } else {
-        toast.error("Failed to save feedback.");
-      }
-    } catch (err) {
-      toast.error("Error saving feedback.");
+      const res = await apiFetch<{ message: string; reportUrl: string; sent: number }>("/api/mentor/dispatch-report", { method: "POST", json: { attemptId: attempt.id, audience } });
+      setReportUrl(res.reportUrl);
+      if (res.sent > 0) toast.success(res.message);
+      else toast.warning(res.message);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't send report");
     } finally {
-      setSavingComment(false);
+      setBusy(null);
     }
   };
 
-  const handleTriggerParentDispatch = async (channel: "WHATSAPP" | "EMAIL" = "WHATSAPP") => {
-    if (!selectedAttempt) return;
-    setDispatchingReport(true);
-    setDispatchedUrl(null);
-    try {
-      const res = await fetch("/api/mentor/dispatch-report", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ attemptId: selectedAttempt.id, channel })
-      });
-
-      const data = await res.json();
-      if (res.ok && data.success) {
-        setDispatchedUrl(data.reportUrl);
-        toast.success(`Report Card dispatched to ${data.studentName}'s parents via ${channel}!`);
-      } else {
-        toast.error(data.error || "Failed to dispatch report.");
-      }
-    } catch (err) {
-      toast.error("Error dispatching report to parent.");
-    } finally {
-      setDispatchingReport(false);
-    }
-  };
-
-  // Filter students logic
-  const filteredStudents = students.filter(s => {
-    const matchesSearch = s.name?.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          s.email?.toLowerCase().includes(searchQuery.toLowerCase());
-    
-    // Exam category filter match
-    const hasCategoryAttempt = selectedExamCategory === "ALL" || s.attempts?.some((att: any) => {
-      const titleUpper = (att.test?.title || "").toUpperCase();
-      return titleUpper.includes(selectedExamCategory);
-    });
-
-    // Batch match
-    const matchesBatch = selectedBatch === "ALL" || s.batch?.name === selectedBatch || true;
-
-    // Performance tier match based on avg score
-    let matchesTier = true;
-    if (selectedPerformanceTier !== "ALL" && s.attempts && s.attempts.length > 0) {
-      const avgPct = s.attempts.reduce((acc: number, curr: any) => acc + (curr.percentage || 0), 0) / s.attempts.length;
-      if (selectedPerformanceTier === "TOP (≥75%)") matchesTier = avgPct >= 75;
-      else if (selectedPerformanceTier === "MODERATE (50-74%)") matchesTier = avgPct >= 50 && avgPct < 75;
-      else if (selectedPerformanceTier === "LOW (<50%)") matchesTier = avgPct < 50;
-    }
-
-    return matchesSearch && hasCategoryAttempt && matchesBatch && matchesTier;
-  });
+  if (loading) return <PageLoader label="Loading students…" />;
+  if (error) return <ErrorState message={error} onRetry={reload} />;
 
   return (
-    <div className="space-y-8 max-w-7xl mx-auto pb-16">
-      
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-black text-white tracking-tight">Candidate Performance & Oversight</h1>
-          <p className="text-sm text-slate-400 mt-1">
-            Segregate candidates by exam, test performance & class batches. Review attempts and trigger parent WhatsApp report cards.
-          </p>
+    <div className="space-y-6">
+      <PageHeader title="Students & Reports" description="Review each student's attempts, leave feedback and send report cards to parents." />
+
+      <div className="flex flex-col gap-3 sm:flex-row">
+        <div className="relative flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by name or email" className={`${inputClass} pl-9`} />
         </div>
+        <select value={batch} onChange={(e) => setBatch(e.target.value)} className={`${inputClass} sm:w-56`} aria-label="Batch">
+          <option value="ALL">All batches</option>
+          {batches.map((b) => <option key={b}>{b}</option>)}
+          <option value="NONE">Unassigned</option>
+        </select>
       </div>
 
-      {/* Segregation & Filter Bar */}
-      <div className="bg-slate-900/80 border border-white/10 rounded-2xl p-5 space-y-4 backdrop-blur-xl">
-        <div className="flex items-center justify-between border-b border-white/10 pb-3">
-          <h3 className="text-xs font-extrabold uppercase text-blue-400 tracking-wider flex items-center gap-2">
-            <Filter className="w-4 h-4" />
-            Candidate Segregation Controls
-          </h3>
-          <span className="text-xs text-slate-400">Showing <strong>{filteredStudents.length}</strong> of <strong>{students.length}</strong> Students</span>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* Search */}
-          <div className="relative">
-            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input 
-              type="text"
-              placeholder="Search student by name/email..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-blue-500"
-            />
-          </div>
-
-          {/* Exam Category Filter */}
-          <div>
-            <label className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Exam Type</label>
-            <select
-              value={selectedExamCategory}
-              onChange={(e) => setSelectedExamCategory(e.target.value)}
-              className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white focus:border-blue-500 outline-none"
-            >
-              {examCategories.map(cat => (
-                <option key={cat} value={cat}>{cat === "ALL" ? "All Exams (JEE, NEET, AFCAT, GATE...)" : cat}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Class / Batch Filter */}
-          <div>
-            <label className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Class / Batch</label>
-            <select
-              value={selectedBatch}
-              onChange={(e) => setSelectedBatch(e.target.value)}
-              className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white focus:border-blue-500 outline-none"
-            >
-              {batches.map(b => (
-                <option key={b} value={b}>{b === "ALL" ? "All Batches & Classes" : b}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Performance Tier */}
-          <div>
-            <label className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Performance Tier</label>
-            <select
-              value={selectedPerformanceTier}
-              onChange={(e) => setSelectedPerformanceTier(e.target.value)}
-              className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white focus:border-blue-500 outline-none"
-            >
-              {performanceTiers.map(tier => (
-                <option key={tier} value={tier}>{tier}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        
-        {/* Left Column: Student Roster (1 col) */}
-        <div className="bg-slate-900/60 border border-white/10 rounded-2xl p-5 space-y-4">
-          <div className="flex items-center justify-between border-b border-white/10 pb-3">
-            <h3 className="font-bold text-white text-sm flex items-center gap-2">
-              <Users className="w-4 h-4 text-blue-400" />
-              Candidate Roster ({filteredStudents.length})
-            </h3>
-          </div>
-
-          {loading ? (
-            <div className="text-center py-8 text-xs text-slate-500">Loading candidate roster...</div>
-          ) : filteredStudents.length === 0 ? (
-            <div className="text-center py-8 text-xs text-slate-500">No candidates match current filters.</div>
-          ) : (
-            <div className="space-y-2 max-h-[600px] overflow-y-auto pr-1 custom-scrollbar">
-              {filteredStudents.map((student) => {
-                const isSelected = selectedStudent?.id === student.id;
-                const attemptsCount = student.attempts?.length || 0;
-                const avgScore = attemptsCount > 0 
-                  ? (student.attempts.reduce((a: number, b: any) => a + (b.score || 0), 0) / attemptsCount).toFixed(1)
-                  : "N/A";
-
-                return (
-                  <div
-                    key={student.id}
-                    onClick={() => { setSelectedStudent(student); setSelectedAttempt(null); setDispatchedUrl(null); }}
-                    className={`p-3.5 rounded-xl border transition-all cursor-pointer ${
-                      isSelected
-                        ? 'bg-blue-600/20 border-blue-500/40 shadow-md'
-                        : 'bg-white/[0.02] border-white/10 hover:bg-white/[0.05]'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-xs font-bold uppercase shrink-0">
-                        {student.name ? student.name.charAt(0) : "S"}
-                      </div>
-                      <div className="overflow-hidden flex-1">
-                        <p className="font-bold text-xs text-slate-200 truncate">{student.name}</p>
-                        <p className="text-[10px] text-slate-400 truncate">{student.email}</p>
-                      </div>
+      {students.length === 0 ? (
+        <Card><EmptyState icon={Users} title="No students yet" description="Approved students in your institute will appear here." /></Card>
+      ) : (
+        <div className="grid gap-6 lg:grid-cols-5">
+          <Card className="lg:col-span-2">
+            <CardHeader title={`${rows.length} student${rows.length === 1 ? "" : "s"}`} />
+            <ul className="max-h-[70vh] divide-y divide-white/[0.05] overflow-y-auto">
+              {rows.map((s) => (
+                <li key={s.id}>
+                  <button onClick={() => setSelectedId(s.id)} className={cn("flex w-full items-center gap-3 px-5 py-3 text-left hover:bg-white/[0.03]", selectedId === s.id && "bg-blue-600/10")}>
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-sm font-bold text-white">{s.name.charAt(0)}</div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-slate-100">{s.name}</p>
+                      <p className="truncate text-xs text-slate-500">{s.batch?.name ?? "Unassigned"} · {s.done.length} test{s.done.length === 1 ? "" : "s"}</p>
                     </div>
-                    <div className="mt-2 flex items-center justify-between text-[10px] text-slate-400 border-t border-white/5 pt-2">
-                      <span>{attemptsCount} Tests Taken</span>
-                      <span className="text-emerald-400 font-bold">Avg: {avgScore} pts</span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* Right Column: Candidate Evaluation & Parent Dispatch Panel (2 cols) */}
-        <div className="lg:col-span-2 bg-slate-900/60 border border-white/10 rounded-2xl p-6 min-h-[600px] flex flex-col justify-between">
-          {!selectedStudent ? (
-            <div className="flex-1 flex flex-col items-center justify-center text-center text-slate-500 space-y-3 py-16">
-              <Users className="w-12 h-12 text-slate-600" />
-              <p className="text-base font-bold text-slate-300">Select a Candidate</p>
-              <p className="text-xs text-slate-500 max-w-sm">
-                Select a candidate from the roster on the left to inspect test scores, evaluate performance, write mentor notes, and dispatch official reports to parents.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-6">
-              
-              {/* Profile Header */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-white/10 pb-4 gap-4">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-full bg-blue-600/20 text-blue-400 border border-blue-500/30 flex items-center justify-center text-xl font-bold uppercase">
-                    {selectedStudent.name ? selectedStudent.name.charAt(0) : "S"}
-                  </div>
-                  <div>
-                    <h2 className="text-xl font-bold text-white tracking-tight">{selectedStudent.name}</h2>
-                    <p className="text-xs text-slate-400">{selectedStudent.email} • Joined {new Date(selectedStudent.createdAt).toLocaleDateString()}</p>
-                  </div>
-                </div>
-
-                <Button 
-                  variant="outline" 
-                  onClick={() => { setSelectedStudent(null); setSelectedAttempt(null); setDispatchedUrl(null); }}
-                  className="bg-white/5 border-white/10 text-xs text-slate-300 hover:bg-white/10 h-8"
-                >
-                  Close Candidate Profile
-                </Button>
-              </div>
-
-              {selectedAttempt ? (
-                /* Detailed Attempt Performance View & Parent Dispatch */
-                <div className="space-y-6 animate-in fade-in duration-200">
-                  <button 
-                    onClick={() => { setSelectedAttempt(null); setDispatchedUrl(null); }}
-                    className="text-xs text-blue-400 hover:text-blue-300 font-bold flex items-center gap-1"
-                  >
-                    <ArrowLeft className="w-3.5 h-3.5" />
-                    Back to attempt list
+                    {s.avg != null ? <Badge tone={scoreTone(s.avg)}>{s.avg.toFixed(0)}%</Badge> : <span className="text-xs text-slate-600">—</span>}
+                    <ChevronRight className="h-4 w-4 text-slate-600" />
                   </button>
+                </li>
+              ))}
+              {rows.length === 0 && <li className="px-5 py-8 text-center text-sm text-slate-500">No students match.</li>}
+            </ul>
+          </Card>
 
-                  <div className="p-5 rounded-xl border border-white/10 bg-black/30 space-y-5">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/10 pb-4">
-                      <div>
-                        <span className="px-2 py-0.5 bg-blue-500/20 text-blue-300 border border-blue-500/30 text-[10px] font-bold rounded uppercase">
-                          Official Test Attempt
-                        </span>
-                        <h3 className="text-lg font-bold text-white mt-1">{selectedAttempt.test?.title || "Mock Exam"}</h3>
-                        <p className="text-xs text-slate-400">Date: {new Date(selectedAttempt.createdAt).toLocaleString()}</p>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <Button 
-                          onClick={() => window.print()} 
-                          className="bg-white/10 hover:bg-white/20 text-white text-xs font-bold h-9 px-3 border border-white/10"
-                        >
-                          <Download className="w-3.5 h-3.5 mr-1" />
-                          Print / PDF Report
-                        </Button>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                      <div className="p-3 bg-white/5 rounded-xl border border-white/10">
-                        <p className="text-[10px] text-slate-400 uppercase font-bold">Score Obtained</p>
-                        <p className="text-xl font-black text-emerald-400">{selectedAttempt.score ?? 0} / {selectedAttempt.test?.totalMarks || 100}</p>
-                      </div>
-                      <div className="p-3 bg-white/5 rounded-xl border border-white/10">
-                        <p className="text-[10px] text-slate-400 uppercase font-bold">Accuracy</p>
-                        <p className="text-xl font-black text-blue-400">{selectedAttempt.accuracy ? `${selectedAttempt.accuracy.toFixed(1)}%` : "N/A"}</p>
-                      </div>
-                      <div className="p-3 bg-white/5 rounded-xl border border-white/10">
-                        <p className="text-[10px] text-slate-400 uppercase font-bold">Correct / Incorrect</p>
-                        <p className="text-sm font-bold text-slate-200 mt-1">
-                          <span className="text-emerald-400">{selectedAttempt.correctCount || 0}</span> / <span className="text-rose-400">{selectedAttempt.incorrectCount || 0}</span>
-                        </p>
-                      </div>
-                      <div className="p-3 bg-white/5 rounded-xl border border-white/10">
-                        <p className="text-[10px] text-slate-400 uppercase font-bold">Batch Rank</p>
-                        <p className="text-xl font-black text-indigo-400">#{selectedAttempt.rank || 1}</p>
-                      </div>
-                    </div>
-
-                    {/* Mentor Feedback Input */}
-                    <div className="space-y-2 pt-2">
-                      <label className="text-xs font-bold text-slate-300 uppercase block">Mentor Remarks / Lessons Review Note</label>
-                      <textarea
-                        value={comment}
-                        onChange={(e) => setComment(e.target.value)}
-                        placeholder="Leave remarks on lessons, accuracy, concept gaps or test execution..."
-                        className="w-full bg-slate-950 border border-white/10 rounded-xl p-3 text-xs text-white focus:border-blue-500 outline-none min-h-[90px]"
-                      />
-                      <Button
-                        onClick={handleSaveComment}
-                        disabled={savingComment}
-                        className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold h-9 text-xs px-4 rounded-xl shadow-md"
-                      >
-                        {savingComment ? "Saving..." : "Save Feedback Note"}
-                      </Button>
-                    </div>
-
-                    {/* PARENT REPORT DISPATCH TRIGGER SECTION */}
-                    <div className="p-4 bg-gradient-to-r from-blue-950/60 to-indigo-950/60 border border-blue-500/30 rounded-xl space-y-3 pt-3">
-                      <div className="flex items-center justify-between">
-                        <h4 className="text-xs font-black uppercase text-blue-300 tracking-wider flex items-center gap-2">
-                          <Send className="w-3.5 h-3.5 text-blue-400" />
-                          Parent WhatsApp & Email Report Dispatch Engine
-                        </h4>
-                        <span className="text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded font-bold">
-                          Encrypted Token Ready
-                        </span>
-                      </div>
-
-                      <p className="text-xs text-slate-300">
-                        Trigger an official AES-256 encrypted report card link dispatch to <strong>{selectedStudent.name}</strong>'s parent.
-                      </p>
-
-                      <div className="flex flex-wrap items-center gap-3 pt-1">
-                        <Button
-                          onClick={() => handleTriggerParentDispatch("WHATSAPP")}
-                          disabled={dispatchingReport}
-                          className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs h-9 px-4 rounded-xl shadow-lg shadow-emerald-600/20"
-                        >
-                          {dispatchingReport ? "Dispatching..." : "📱 Dispatch WhatsApp Report Card"}
-                        </Button>
-
-                        <Button
-                          onClick={() => handleTriggerParentDispatch("EMAIL")}
-                          disabled={dispatchingReport}
-                          className="bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs h-9 px-4 rounded-xl shadow-lg shadow-blue-600/20"
-                        >
-                          📧 Dispatch Email Report
-                        </Button>
-                      </div>
-
-                      {dispatchedUrl && (
-                        <div className="mt-3 p-3 bg-slate-950 border border-emerald-500/40 rounded-xl space-y-1 animate-in fade-in">
-                          <p className="text-[10px] text-emerald-400 font-bold uppercase">✅ Parent Dispatch Link Active:</p>
-                          <div className="flex items-center justify-between gap-2 text-xs">
-                            <span className="text-slate-300 truncate font-mono text-[11px]">{dispatchedUrl}</span>
-                            <Link href={dispatchedUrl} target="_blank">
-                              <Button className="bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 h-7 text-[10px] font-bold px-2 shrink-0">
-                                Open Report <ExternalLink className="w-3 h-3 ml-1" />
-                              </Button>
-                            </Link>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                  </div>
+          <Card className="lg:col-span-3">
+            {!selected ? (
+              <EmptyState icon={Users} title="Select a student" description="Pick a student to see their attempts, give feedback and send reports." />
+            ) : (
+              <>
+                <CardHeader title={selected.name} description={`${selected.email}${selected.phone ? ` · ${selected.phone}` : ""}`} />
+                <div className="border-b border-white/[0.06] px-5 py-3 text-xs text-slate-400">
+                  Parents: {selected.studentLinks.length ? selected.studentLinks.map((l) => `${l.parent.name}${l.parent.phone ? ` (${l.parent.phone})` : ""}`).join(", ") : <span className="text-amber-300">none linked — reports go to the student&apos;s number</span>}
                 </div>
-              ) : (
-                /* Candidate Attempt List */
-                <div className="space-y-4">
-                  <h3 className="text-sm font-bold text-white uppercase tracking-wider">Exam & Lesson Attempt History ({selectedStudent.attempts?.length || 0})</h3>
-                  
-                  {(!selectedStudent.attempts || selectedStudent.attempts.length === 0) ? (
-                    <div className="text-center py-12 text-xs text-slate-500 bg-black/20 rounded-xl border border-white/5">
-                      No test attempts recorded for this candidate yet.
-                    </div>
-                  ) : (
-                    <div className="space-y-3 max-h-[450px] overflow-y-auto pr-1 custom-scrollbar">
-                      {selectedStudent.attempts.map((att: any) => (
-                        <div
-                          key={att.id}
-                          onClick={() => { setSelectedAttempt(att); setComment(att.mentorComment || ""); setDispatchedUrl(null); }}
-                          className="p-4 rounded-xl border border-white/10 bg-white/[0.02] hover:bg-white/[0.05] transition-all cursor-pointer flex items-center justify-between group"
-                        >
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="px-2 py-0.5 bg-blue-500/20 text-blue-300 border border-blue-500/30 text-[9px] font-bold rounded uppercase">
-                                {att.test?.title?.split(" ")[0] || "TEST"}
-                              </span>
-                              <h4 className="font-bold text-white text-xs group-hover:text-blue-400 transition-colors">{att.test?.title || "Mock Test"}</h4>
-                            </div>
-                            <p className="text-[10px] text-slate-400 mt-1">Attempted: {new Date(att.createdAt).toLocaleString()}</p>
-                          </div>
-
-                          <div className="text-right flex items-center gap-4">
-                            <div>
-                              <p className="text-sm font-black text-emerald-400">{att.score ?? 0} pts</p>
-                              <p className="text-[9px] text-slate-400 font-bold">{att.percentage ? `${att.percentage}%` : ""}</p>
-                            </div>
-                            <Button className="bg-blue-600/20 text-blue-300 border border-blue-500/30 group-hover:bg-blue-600 group-hover:text-white transition-all h-8 text-[10px] font-bold px-3">
-                              Inspect & Dispatch →
-                            </Button>
-                          </div>
+                {selected.attempts.length === 0 ? (
+                  <EmptyState title="No attempts yet" />
+                ) : (
+                  <ul className="divide-y divide-white/[0.05]">
+                    {selected.attempts.map((a) => (
+                      <li key={a.id} className="flex items-center justify-between gap-3 px-5 py-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm text-slate-200">{a.test.title}{a.isRetry && <span className="text-xs text-slate-500"> · retest</span>}</p>
+                          <p className="text-xs text-slate-500">{formatDate(a.createdAt)}{a.mentorComment && " · feedback given"}</p>
                         </div>
-                      ))}
+                        <div className="flex items-center gap-2">
+                          {finished(a) ? (
+                            <>
+                              <Badge tone={scoreTone(a.percentage ?? 0)}>{(a.percentage ?? 0).toFixed(1)}%</Badge>
+                              <Btn size="sm" variant="secondary" onClick={() => openAttempt(a)}><MessageSquare className="h-3.5 w-3.5" />Open</Btn>
+                            </>
+                          ) : (
+                            <Badge tone="amber">In progress</Badge>
+                          )}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </>
+            )}
+          </Card>
+        </div>
+      )}
+
+      <Modal open={!!attempt} onClose={() => setAttempt(null)} title={attempt?.test.title ?? ""} description={selected ? `${selected.name} · ${attempt ? formatDate(attempt.createdAt) : ""}` : undefined} size="lg">
+        {attempt && (
+          <div className="space-y-5">
+            <div className="grid grid-cols-3 gap-3">
+              <div className="rounded-xl bg-white/[0.04] p-3"><p className="text-[11px] text-slate-400">Score</p><p className="text-lg font-bold text-white">{(attempt.percentage ?? 0).toFixed(1)}%</p></div>
+              <div className="rounded-xl bg-white/[0.04] p-3"><p className="text-[11px] text-slate-400">Accuracy</p><p className="text-lg font-bold text-white">{(attempt.accuracy ?? 0).toFixed(1)}%</p></div>
+              <div className="rounded-xl bg-white/[0.04] p-3"><p className="text-[11px] text-slate-400">Rank</p><p className="text-lg font-bold text-white">{attempt.isRetry ? "—" : `#${attempt.rank ?? 1}`}</p></div>
+            </div>
+            <Tabs value={tab} onChange={setTab} items={[{ id: "feedback", label: "Feedback & report" }, { id: "review", label: "Answer review" }]} />
+            {tab === "review" ? (
+              <TestReview attemptId={attempt.id} embedded allowBookmarks={false} />
+            ) : (
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-slate-300">Mentor feedback (visible to the student and parents)</p>
+                  <textarea rows={4} value={comment} onChange={(e) => setComment(e.target.value)} className={inputClass} placeholder="Strengths, mistakes to fix, what to revise next…" />
+                  <Btn loading={busy === "comment"} onClick={saveComment}>Save feedback</Btn>
+                </div>
+                <div className="space-y-2 border-t border-white/[0.06] pt-4">
+                  <p className="text-xs font-medium text-slate-300">Send report card</p>
+                  <div className="flex flex-wrap gap-2">
+                    <Btn variant="success" loading={busy === "PARENTS"} disabled={!!busy} onClick={() => dispatch("PARENTS")}><Send className="h-4 w-4" />To parents</Btn>
+                    <Btn variant="secondary" loading={busy === "STUDENT"} disabled={!!busy} onClick={() => dispatch("STUDENT")}>To student</Btn>
+                    <Btn variant="secondary" loading={busy === "BOTH"} disabled={!!busy} onClick={() => dispatch("BOTH")}>To both</Btn>
+                  </div>
+                  <p className="text-[11px] text-slate-500">Sent by WhatsApp and/or SMS as set up in Admin → Messaging, with a short link to the report card. Delivery status appears in Notification Logs.</p>
+                  {reportUrl && (
+                    <div className="flex items-center gap-2 rounded-lg bg-black/30 p-2 text-xs">
+                      <span className="flex-1 truncate font-mono text-slate-400">{reportUrl}</span>
+                      <button onClick={() => { navigator.clipboard.writeText(reportUrl); toast.success("Link copied"); }} className="rounded p-1 text-slate-300 hover:bg-white/10" aria-label="Copy link"><Copy className="h-3.5 w-3.5" /></button>
                     </div>
                   )}
                 </div>
-              )}
-
-            </div>
-          )}
-        </div>
-
-      </div>
-
+              </div>
+            )}
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

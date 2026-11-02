@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { requireRole } from "@/lib/api";
+import { isFinished } from "@/lib/attempts";
 
 export async function POST(
   request: Request,
@@ -9,39 +9,30 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
-    const session = await getServerSession(authOptions);
-    if (!session || session.user.role !== "STUDENT") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const { session, error } = await requireRole(["STUDENT"]);
+    if (error) return error;
 
-    const body = await request.json();
-    const { reason } = body;
-
-    if (!reason) {
+    const { reason } = await request.json();
+    if (!reason || typeof reason !== "string") {
       return NextResponse.json({ error: "Missing reason" }, { status: 400 });
     }
 
-    const attempt = await prisma.attempt.findUnique({
-      where: { id },
-    });
-
+    const attempt = await prisma.attempt.findUnique({ where: { id } });
     if (!attempt || attempt.userId !== session.user.id) {
       return NextResponse.json({ error: "Not Found" }, { status: 404 });
     }
+    if (isFinished(attempt.status)) {
+      return NextResponse.json({ error: "Attempt already submitted" }, { status: 409 });
+    }
 
-    // Log Violation
     await prisma.violation.create({
-      data: {
-        attemptId: attempt.id,
-        type: reason,
-      },
+      data: { attemptId: attempt.id, type: reason.slice(0, 100) },
     });
+    const count = await prisma.violation.count({ where: { attemptId: attempt.id } });
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, count });
   } catch (error) {
     console.error("[VIOLATION_POST]", error);
     return NextResponse.json({ error: "Internal Error" }, { status: 500 });
   }
 }
-
-

@@ -31,8 +31,8 @@ export default function RegisterPage() {
       if (res.ok) {
         setSuccess(true);
       } else {
-        const errorText = await res.text();
-        setError(errorText || "Registration failed");
+        const data = await res.json().catch(() => ({}));
+        setError(data.error || "Registration failed");
       }
     } catch (err) {
       setError("An error occurred");
@@ -78,7 +78,7 @@ export default function RegisterPage() {
             A
           </div>
           <span className="text-xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-400">
-            Astra Exam Platform
+            Astra
           </span>
         </Link>
       </nav>
@@ -91,7 +91,7 @@ export default function RegisterPage() {
               Create an Account
             </h1>
             <p className="text-slate-400 mt-2 text-sm">
-              Join the Astra Exam Platform
+              Join the Astra
             </p>
           </div>
 
@@ -125,7 +125,7 @@ export default function RegisterPage() {
             <div className="space-y-1.5">
               <label className="block text-sm font-medium text-slate-300 ml-1">Password</label>
               <input 
-                name="password" 
+                name="password" minLength={8} 
                 type="password" 
                 required 
                 className="w-full bg-slate-900/50 border border-slate-700 text-white p-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all placeholder:text-slate-600" 

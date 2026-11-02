@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client'
 import bcrypt from 'bcryptjs'
+import { seedContent } from './seed-content'
 
 const prisma = new PrismaClient()
 
@@ -177,215 +178,13 @@ async function main() {
     }
   })
 
-  // 5. Create Exam Templates for major competitive exams
-  const jeeTemplate = await prisma.examTemplate.create({
-    data: {
-      name: 'JEE Main CBT Official Pattern 2026',
-      examCategory: 'JEE',
-      mode: 'CBT',
-      totalDuration: 180, // 3 hours
-      isSectionalTiming: false,
-      hasNegativeMarking: true,
-      config: JSON.stringify({
-        sections: [
-          { name: 'Physics', questionCount: 25, marksPerQuestion: 4, negativeMarking: 1 },
-          { name: 'Chemistry', questionCount: 25, marksPerQuestion: 4, negativeMarking: 1 },
-          { name: 'Mathematics', questionCount: 25, marksPerQuestion: 4, negativeMarking: 1 }
-        ],
-        allowQuestionNavigation: true,
-        randomizeQuestions: true,
-        randomizeOptions: true,
-        proctoring: { enableTabSwitchDetection: true, maxViolations: 3 }
-      }),
-      organizationId: org.id
-    }
-  })
-
-  const neetTemplate = await prisma.examTemplate.create({
-    data: {
-      name: 'NEET UG OMR Practice Pattern 2026',
-      examCategory: 'NEET',
-      mode: 'OMR',
-      totalDuration: 200, // 3 hours 20 mins
-      isSectionalTiming: false,
-      hasNegativeMarking: true,
-      config: JSON.stringify({
-        sections: [
-          { name: 'Physics', questionCount: 45, marksPerQuestion: 4, negativeMarking: 1 },
-          { name: 'Chemistry', questionCount: 45, marksPerQuestion: 4, negativeMarking: 1 },
-          { name: 'Botany', questionCount: 45, marksPerQuestion: 4, negativeMarking: 1 },
-          { name: 'Zoology', questionCount: 45, marksPerQuestion: 4, negativeMarking: 1 }
-        ],
-        omrSheetGridCols: 4,
-        allowReviewBeforeSubmit: true
-      }),
-      organizationId: org.id
-    }
-  })
-
-  const gateTemplate = await prisma.examTemplate.create({
-    data: {
-      name: 'GATE Computer Science CBT Pattern',
-      examCategory: 'GATE',
-      mode: 'CBT',
-      totalDuration: 180,
-      isSectionalTiming: false,
-      hasNegativeMarking: true,
-      config: JSON.stringify({
-        sections: [
-          { name: 'General Aptitude', questionCount: 10, totalMarks: 15 },
-          { name: 'Computer Science Core', questionCount: 55, totalMarks: 85 }
-        ],
-        virtualCalculatorEnabled: true
-      }),
-      organizationId: org.id
-    }
-  })
-
-  const afcatTemplate = await prisma.examTemplate.create({
-    data: {
-      name: 'AFCAT Standard CBT Pattern',
-      examCategory: 'AFCAT',
-      mode: 'CBT',
-      totalDuration: 120,
-      isSectionalTiming: false,
-      hasNegativeMarking: true,
-      config: JSON.stringify({
-        sections: [
-          { name: 'General Awareness', questionCount: 25 },
-          { name: 'Verbal Ability in English', questionCount: 25 },
-          { name: 'Numerical Ability', questionCount: 20 },
-          { name: 'Reasoning and Military Aptitude', questionCount: 30 }
-        ]
-      }),
-      organizationId: org.id
-    }
-  })
-
-  // 6. Create Questions with Multi-Format support
-  const q1 = await prisma.question.create({
-    data: {
-      text: 'A block of mass 5 kg moves on a horizontal frictionless surface under a constant horizontal force of 20 N. Calculate the acceleration of the block.',
-      options: JSON.stringify([
-        { id: 'A', text: '2 m/s²' },
-        { id: 'B', text: '4 m/s²' },
-        { id: 'C', text: '5 m/s²' },
-        { id: 'D', text: '10 m/s²' }
-      ]),
-      correctOption: 'B',
-      explanation: 'Using Newton\'s Second Law: a = F / m = 20 N / 5 kg = 4 m/s².',
-      subject: 'Physics',
-      chapter: 'Laws of Motion',
-      topic: 'Newton\'s Second Law',
-      subtopic: 'Force and Acceleration',
-      difficulty: 'EASY',
-      questionType: 'SINGLE_CHOICE',
-      marks: 4,
-      negativeMarks: 1,
-      tags: 'jee,physics,mechanics',
-      estimatedTime: 60,
-      examCategory: 'JEE',
-      organizationId: org.id
-    }
-  })
-
-  const q2 = await prisma.question.create({
-    data: {
-      text: 'Which of the following compounds undergo SN1 reaction fastest in ethanol?',
-      options: JSON.stringify([
-        { id: 'A', text: 'Methyl chloride' },
-        { id: 'B', text: 'Ethyl chloride' },
-        { id: 'C', text: 'Isopropyl chloride' },
-        { id: 'D', text: 'tert-Butyl chloride' }
-      ]),
-      correctOption: 'D',
-      explanation: 'SN1 reaction rate depends on the stability of carbocation formed. Tertiary carbocation is most stable due to hyperconjugation and inductive effect.',
-      subject: 'Chemistry',
-      chapter: 'Organic Chemistry',
-      topic: 'Haloalkanes and Haloarenes',
-      subtopic: 'Nucleophilic Substitution Reactions',
-      difficulty: 'MEDIUM',
-      questionType: 'SINGLE_CHOICE',
-      marks: 4,
-      negativeMarks: 1,
-      tags: 'jee,neet,chemistry,organic',
-      estimatedTime: 90,
-      examCategory: 'JEE',
-      organizationId: org.id
-    }
-  })
-
-  const q3 = await prisma.question.create({
-    data: {
-      text: 'If matrix A = [[1, 2], [3, 4]], calculate the determinant |A|.',
-      options: JSON.stringify([
-        { id: 'A', text: '-2' },
-        { id: 'B', text: '2' },
-        { id: 'C', text: '10' },
-        { id: 'D', text: '-10' }
-      ]),
-      correctOption: 'A',
-      explanation: '|A| = (1 * 4) - (2 * 3) = 4 - 6 = -2.',
-      subject: 'Mathematics',
-      chapter: 'Matrices and Determinants',
-      topic: 'Determinants',
-      subtopic: '2x2 Determinant Calculation',
-      difficulty: 'EASY',
-      questionType: 'NUMERICAL',
-      marks: 4,
-      negativeMarks: 0,
-      tags: 'jee,maths,algebra',
-      estimatedTime: 45,
-      examCategory: 'JEE',
-      organizationId: org.id
-    }
-  })
-
-  // 7. Create a JEE Mock Test (CBT)
-  const jeeMockTest = await prisma.test.create({
-    data: {
-      title: 'JEE Main Full Length Mock Test #1',
-      description: 'Comprehensive CBT mock exam following official NTA JEE pattern.',
-      duration: 180,
-      totalMarks: 300,
-      type: 'MOCK',
-      mode: 'CBT',
-      status: 'ACTIVE',
-      isPublished: true,
-      templateId: jeeTemplate.id,
-      organizationId: org.id,
-      batches: { connect: [{ id: batch.id }] },
-      questions: {
-        create: [
-          { question: { connect: { id: q1.id } }, order: 1, section: 'Physics' },
-          { question: { connect: { id: q2.id } }, order: 2, section: 'Chemistry' },
-          { question: { connect: { id: q3.id } }, order: 3, section: 'Mathematics' }
-        ]
-      }
-    }
-  })
-
-  // 8. Create a NEET OMR Practice Test
-  const neetOmrTest = await prisma.test.create({
-    data: {
-      title: 'NEET UG Full Syllabus OMR Practice Test #1',
-      description: 'Pen-paper / OMR simulation practice test for NEET aspirants.',
-      duration: 200,
-      totalMarks: 720,
-      type: 'PRACTICE',
-      mode: 'OMR',
-      status: 'ACTIVE',
-      isPublished: true,
-      templateId: neetTemplate.id,
-      organizationId: org.id,
-      batches: { connect: [{ id: batch.id }] },
-      questions: {
-        create: [
-          { question: { connect: { id: q1.id } }, order: 1, section: 'Physics' },
-          { question: { connect: { id: q2.id } }, order: 2, section: 'Chemistry' }
-        ]
-      }
-    }
+  // 5. Templates, question bank, tests, demo attempts, announcements, resources
+  await seedContent(prisma, {
+    orgId: org.id,
+    batchId: batch.id,
+    studentId: studentPlab.id,
+    student2Id: student.id,
+    mentorId: mentorPlab.id
   })
 
   console.log('✅ Multi-Tenant Seeding Completed Successfully!')
@@ -394,9 +193,10 @@ async function main() {
   console.log('Super Admin:   superadmin@platform.com / password123')
   console.log('Inst Admin:    admin@apex.com / password123')
   console.log('Faculty:       faculty@apex.com / password123')
-  console.log('Student:       student@apex.com / password123 (Linked Parent: parent@apex.com)')
+  console.log('Student:       student@astra.com / password123 (Linked Parent: parent@astra.com)')
+  console.log('Mentor:        mentor@astra.com / password123')
   console.log('Parent:        parent@apex.com / password123')
-  console.log('Exam Templates: JEE CBT, NEET OMR, GATE CBT, AFCAT CBT')
+  console.log('Content:       4 templates, 27 questions, 4 tests (PLAB, JEE, NEET OMR), demo attempts')
   console.log('----------------------------------------------------')
 }
 

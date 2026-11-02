@@ -3,8 +3,9 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL") // pooled connection, used by the app
+  directUrl = env("DATABASE_URL_UNPOOLED") // direct connection, used by migrations
 }
 
 enum Role {
@@ -75,6 +76,8 @@ model Organization {
   tests           Test[]
   questions       Question[]
   examTemplates   ExamTemplate[]
+  announcements   Announcement[]
+  resources       Resource[]
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
 }
@@ -94,6 +97,18 @@ model User {
   attempts        Attempt[]
   requests        TestRequest[]
   sessionId       String?
+  examTracks      String?             // JSON array of exam categories the student is preparing for
+  targetExamDate  DateTime?           // student's exam day, drives the dashboard countdown
+  dailyGoal       Int                 @default(30) // questions per day
+  notifyWhatsapp  Boolean             @default(true) // opt-out of WhatsApp messages
+  notifySms       Boolean             @default(true) // opt-out of SMS messages
+  passwordResets  PasswordReset[]
+  bookmarks       Bookmark[]
+  reviewItems     ReviewItem[]
+  studyLogs       StudyLog[]
+  questionReports QuestionReport[]
+  announcements   Announcement[]
+  resources       Resource[]
   
   // Parent - Student Linkage
   parentLinks     ParentStudentLink[] @relation("ParentLink")
@@ -168,6 +183,9 @@ model Question {
   organization   Organization?  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   tests          TestQuestion[]
   answers        Answer[]
+  bookmarks      Bookmark[]
+  reviewItems    ReviewItem[]
+  reports        QuestionReport[]
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
 }
@@ -186,6 +204,7 @@ model Test {
   scheduledEnd   DateTime?
   templateId     String?
   template       ExamTemplate?  @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  ownerId        String?        // set for a student's private custom quiz; hidden from every listing
   organizationId String?
   organization   Organization?  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   batches        Batch[]        @relation("BatchTests")
@@ -273,17 +292,146 @@ model TestRequest {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   count     Int      // 3-5
   category  TestType @default(PRACTICE)
+  examCategory String?
+  notes     String?
   status    Status   @default(PENDING)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
 model NotificationLog {
-  id             String   @id @default(cuid())
-  recipientPhone String
-  type           String   // RESULT_NOTIFICATION, TEST_ASSIGNED, WEEKLY_REPORT
-  status         String   // SENT, FAILED, PENDING
-  payload        String   // JSON payload
-  reportUrl      String?
-  createdAt      DateTime @default(now())
+  id                String   @id @default(cuid())
+  recipientPhone    String
+  recipientName     String?
+  recipientUserId   String?  // the user it was meant for, when known
+  type              String   // RESULT_NOTIFICATION, TEST_ASSIGNED, WEEKLY_REPORT, PASSWORD_RESET, TEST_MESSAGE
+  channel           String   @default("WHATSAPP") // WHATSAPP, SMS
+  provider          String?  // META, TWILIO, MSG91
+  status            String   // SENT, FAILED, SKIPPED
+  error             String?  // why it failed or was skipped
+  providerMessageId String?
+  attempts          Int      @default(1)
+  payload           String   // JSON: message text and template variables (lets a failed message be retried)
+  reportUrl         String?
+  organizationId    String?  // tenant that sent it; logs are only visible to that institute
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @default(now()) @updatedAt
+
+  @@index([organizationId, createdAt])
+}
+
+model Bookmark {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  questionId String
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  note       String?
+  createdAt  DateTime @default(now())
+
+  @@unique([userId, questionId])
+}
+
+model Announcement {
+  id             String        @id @default(cuid())
+  title          String
+  body           String
+  audience       String        @default("ALL") // ALL, STUDENTS, PARENTS
+  priority       String        @default("NORMAL") // NORMAL, HIGH
+  authorId       String
+  author         User          @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdAt      DateTime      @default(now())
+}
+
+model Resource {
+  id             String        @id @default(cuid())
+  title          String
+  url            String
+  category       String        @default("Notes") // Notes, Formula Sheets, Previous Papers, Videos, Syllabus
+  subject        String?
+  description    String?
+  authorId       String
+  author         User          @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdAt      DateTime      @default(now())
+}
+
+// Spaced-repetition card: a question the student got wrong, scheduled for review (SM-2 style).
+model ReviewItem {
+  id             String    @id @default(cuid())
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  questionId     String
+  question       Question  @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  ease           Float     @default(2.5)
+  intervalDays   Int       @default(0)
+  repetitions    Int       @default(0)
+  lapses         Int       @default(0)
+  dueAt          DateTime  @default(now())
+  lastReviewedAt DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@unique([userId, questionId])
+  @@index([userId, dueAt])
+}
+
+// One row per student per day: questions answered in tests plus review cards, for goals and streaks.
+model StudyLog {
+  id        String @id @default(cuid())
+  userId    String
+  user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  day       String // YYYY-MM-DD (UTC)
+  questions Int    @default(0)
+  reviews   Int    @default(0)
+
+  @@unique([userId, day])
+}
+
+// A student flags a question as wrong or unclear; faculty resolve it from the question bank.
+model QuestionReport {
+  id             String    @id @default(cuid())
+  questionId     String
+  question       Question  @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reason         String    // WRONG_ANSWER, TYPO, UNCLEAR, OUTDATED, OTHER
+  details        String?
+  status         String    @default("OPEN") // OPEN, RESOLVED, DISMISSED
+  resolution     String?
+  organizationId String?
+  createdAt      DateTime  @default(now())
+  resolvedAt     DateTime?
+
+  @@index([organizationId, status])
+}
+
+// One-time code for resetting a password, delivered by WhatsApp/SMS. Only the hash is stored.
+model PasswordReset {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  codeHash  String
+  attempts  Int       @default(0)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, createdAt])
+}
+
+// Short, SMS-friendly link to a student's report card (/r/<code>). Tracks whether it was opened.
+model ReportLink {
+  code           String    @id // 8 random url-safe characters
+  attemptId      String
+  studentId      String
+  organizationId String?
+  clicks         Int       @default(0)
+  lastOpenedAt   DateTime?
+  expiresAt      DateTime
+  createdAt      DateTime  @default(now())
+
+  @@index([attemptId])
 }

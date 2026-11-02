@@ -43,3 +43,10 @@ next-env.d.ts
 /src/generated/prisma
 *.db
 *.db-journal
+
+.vercel
+.env*
+
+# test output
+/test-results/
+/playwright-report/

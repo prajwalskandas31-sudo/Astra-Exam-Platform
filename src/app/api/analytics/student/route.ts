@@ -1,47 +1,34 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { studentTestVisibility } from "@/lib/attempts";
+import { requireRole, tenantOrGlobalWhere } from "@/lib/api";
 
 export async function GET() {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session || session.user.role !== "STUDENT") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const { session, error } = await requireRole(["STUDENT"]);
+    if (error) return error;
 
-    const userId = session.user.id;
-
-    // Get all attempts for this user
     const attempts = await prisma.attempt.findMany({
-      where: {
-        userId,
-        status: { in: ["COMPLETED", "AUTO_SUBMITTED"] }
-      }
+      where: { userId: session.user.id, status: { in: ["COMPLETED", "AUTO_SUBMITTED"] }, isRetry: false },
+      select: { testId: true, percentage: true, accuracy: true }
     });
 
     const testsCompleted = attempts.length;
-    const totalScore = attempts.reduce((acc, attempt) => acc + (attempt.score || 0), 0);
-    const averageScore = testsCompleted > 0 ? Math.round(totalScore / testsCompleted) : 0;
+    const averageScore = testsCompleted > 0
+      ? Math.round(attempts.reduce((acc, a) => acc + (a.percentage || 0), 0) / testsCompleted)
+      : 0;
+    const averageAccuracy = testsCompleted > 0
+      ? Math.round(attempts.reduce((acc, a) => acc + (a.accuracy || 0), 0) / testsCompleted)
+      : 0;
 
-    // Get all published tests
-    const allTests = await prisma.test.findMany({
-      where: { isPublished: true }
+    const attemptedTestIds = new Set(attempts.map((a) => a.testId));
+    const upcomingTests = await prisma.test.count({
+      where: { isPublished: true, ownerId: null, id: { notIn: [...attemptedTestIds] }, ...tenantOrGlobalWhere(session), ...(await studentTestVisibility(session.user.id)) }
     });
 
-    // Find tests the user hasn't attempted yet
-    const attemptedTestIds = attempts.map(a => a.testId);
-    const upcomingTests = allTests.filter(t => !attemptedTestIds.includes(t.id)).length;
-
-    return NextResponse.json({
-      averageScore,
-      testsCompleted,
-      upcomingTests
-    });
+    return NextResponse.json({ averageScore, averageAccuracy, testsCompleted, upcomingTests });
   } catch (error) {
     console.error("[STUDENT_ANALYTICS_GET]", error);
     return NextResponse.json({ error: "Internal Error" }, { status: 500 });
   }
 }
-
-

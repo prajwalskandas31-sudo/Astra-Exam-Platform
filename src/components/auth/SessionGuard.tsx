@@ -3,34 +3,33 @@
 import { useSession, signOut } from "next-auth/react";
 import { useEffect } from "react";
 
+/** Logs the user out when their account signs in elsewhere or is deactivated. */
 export function SessionGuard({ children }: { children: React.ReactNode }) {
   const { data: session } = useSession();
+  const sessionId = session?.user?.sessionId;
 
   useEffect(() => {
-    if (!session?.user) return;
+    if (!sessionId) return;
 
     const checkSession = async () => {
       try {
         const res = await fetch("/api/auth/session-check");
+        if (!res.ok) return;
         const data = await res.json();
-
-        if (data.sessionId && data.sessionId !== (session.user as any).sessionId) {
-          console.warn("New session detected elsewhere. Logging out...");
+        if (data.active === false) {
+          signOut({ callbackUrl: "/login?error=AccountDisabled" });
+        } else if (data.sessionId && data.sessionId !== sessionId) {
           signOut({ callbackUrl: "/login?error=SessionInvalid" });
         }
-      } catch (err) {
-        console.error("Session check failed", err);
+      } catch {
+        // Offline or transient failure; try again on the next tick
       }
     };
 
-    // Check every 30 seconds
     const interval = setInterval(checkSession, 30000);
-    
-    // Also check immediately
     checkSession();
-
     return () => clearInterval(interval);
-  }, [session]);
+  }, [sessionId]);
 
   return <>{children}</>;
 }

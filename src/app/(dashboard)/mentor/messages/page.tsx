@@ -1,125 +1,101 @@
 "use client";
 
 import { useState } from "react";
-import { MessageSquare, Send, Users, Sparkles, CheckCircle2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { useSession } from "next-auth/react";
 import { toast } from "sonner";
+import { Megaphone, Send, Trash2 } from "lucide-react";
+import { Badge, Btn, Card, CardHeader, EmptyState, ErrorState, Field, PageHeader, PageLoader, formatDate, inputClass } from "@/components/ui/kit";
+import { apiFetch, useApi } from "@/lib/fetcher";
+import { isAdmin } from "@/lib/roles";
+import type { Announcement } from "@/components/shared/AnnouncementFeed";
 
-export default function MentorMessagesPage() {
-  const [recipientGroup, setRecipientGroup] = useState("All Batches");
-  const [title, setTitle] = useState("");
-  const [messageBody, setMessageBody] = useState("");
+const AUDIENCE_LABEL: Record<string, string> = { ALL: "Students & parents", STUDENTS: "Students", PARENTS: "Parents" };
+
+export default function AnnouncementsPage() {
+  const { data: session } = useSession();
+  const { data, setData, error, loading, reload } = useApi<(Announcement & { author: { name: string; role: string } })[]>("/api/announcements");
+  const [form, setForm] = useState({ title: "", body: "", audience: "ALL", priority: "NORMAL" });
   const [sending, setSending] = useState(false);
 
-  const handleSendAnnouncement = (e: React.FormEvent) => {
+  const send = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title || !messageBody) {
-      toast.error("Please enter both a title and message body.");
-      return;
-    }
-
     setSending(true);
-    setTimeout(() => {
-      toast.success(`Announcement broadcasted to ${recipientGroup} successfully!`);
-      setTitle("");
-      setMessageBody("");
+    try {
+      const created = await apiFetch<Announcement>("/api/announcements", { method: "POST", json: form });
+      setData([created, ...(data ?? [])]);
+      setForm({ title: "", body: "", audience: "ALL", priority: "NORMAL" });
+      toast.success(`Announcement posted to ${AUDIENCE_LABEL[form.audience].toLowerCase()}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't post announcement");
+    } finally {
       setSending(false);
-    }, 800);
+    }
   };
 
+  const remove = async (id: string) => {
+    if (!window.confirm("Delete this announcement?")) return;
+    try {
+      await apiFetch(`/api/announcements?id=${id}`, { method: "DELETE" });
+      setData((data ?? []).filter((a) => a.id !== id));
+      toast.success("Announcement deleted");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't delete");
+    }
+  };
+
+  const canDelete = (a: Announcement & { author: { name: string } }) => isAdmin(session?.user?.role) || a.author.name === session?.user?.name;
+
   return (
-    <div className="space-y-8 max-w-7xl mx-auto pb-16">
-      
-      <div>
-        <h1 className="text-3xl font-black text-white tracking-tight">Announcements & Messages</h1>
-        <p className="text-sm text-slate-400 mt-1">Broadcast important exam alerts, study schedules & mentor guidance to student batches</p>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        
-        {/* Form Column (2 cols) */}
-        <div className="lg:col-span-2 bg-slate-900/60 border border-white/10 rounded-2xl p-6 space-y-6">
-          <h2 className="text-xl font-bold text-white tracking-tight flex items-center gap-2 border-b border-white/10 pb-4">
-            <Send className="w-5 h-5 text-blue-400" />
-            Send New Announcement
-          </h2>
-
-          <form onSubmit={handleSendAnnouncement} className="space-y-4">
-            
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-300 uppercase tracking-wider block">Target Batch / Audience</label>
-              <select
-                value={recipientGroup}
-                onChange={(e) => setRecipientGroup(e.target.value)}
-                className="w-full p-3 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-blue-500 outline-none"
-              >
-                <option value="All Batches">All Batches (Broadcast)</option>
-                <option value="JEE 2026 Batch A">JEE 2026 Batch A</option>
-                <option value="NEET Achievers 2026">NEET Achievers 2026</option>
-                <option value="COMEDK FastTrack">COMEDK FastTrack</option>
-              </select>
+    <div className="space-y-6">
+      <PageHeader title="Announcements" description="Post updates that appear on student and parent dashboards." />
+      <div className="grid gap-6 lg:grid-cols-5">
+        <Card className="lg:col-span-2 lg:self-start">
+          <CardHeader title="New announcement" icon={Send} />
+          <form onSubmit={send} className="space-y-4 p-5">
+            <Field label="Title"><input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} className={inputClass} placeholder="e.g. Full mock this Sunday at 10 AM" required /></Field>
+            <Field label="Message"><textarea rows={6} value={form.body} onChange={(e) => setForm({ ...form, body: e.target.value })} className={inputClass} required /></Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Audience">
+                <select value={form.audience} onChange={(e) => setForm({ ...form, audience: e.target.value })} className={inputClass}>
+                  <option value="ALL">Students & parents</option>
+                  <option value="STUDENTS">Students only</option>
+                  <option value="PARENTS">Parents only</option>
+                </select>
+              </Field>
+              <Field label="Priority">
+                <select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })} className={inputClass}>
+                  <option value="NORMAL">Normal</option>
+                  <option value="HIGH">Important</option>
+                </select>
+              </Field>
             </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-300 uppercase tracking-wider block">Announcement Title</label>
-              <input
-                type="text"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="e.g. New Physics Practice Test Published"
-                required
-                className="w-full p-3 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-blue-500 outline-none"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-300 uppercase tracking-wider block">Message Content</label>
-              <textarea
-                value={messageBody}
-                onChange={(e) => setMessageBody(e.target.value)}
-                placeholder="Write message content for students..."
-                required
-                className="w-full p-4 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-blue-500 outline-none min-h-[140px]"
-              />
-            </div>
-
-            <Button
-              type="submit"
-              disabled={sending}
-              className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold h-11 px-8 rounded-xl shadow-lg shadow-blue-600/30 text-xs flex items-center gap-2"
-            >
-              <Send className="w-4 h-4" />
-              {sending ? "Sending..." : "Broadcast Announcement"}
-            </Button>
-
+            <Btn type="submit" className="w-full" loading={sending} disabled={!form.title.trim() || !form.body.trim()}><Send className="h-4 w-4" />Post announcement</Btn>
           </form>
-        </div>
+        </Card>
 
-        {/* History Column (1 col) */}
-        <div className="bg-slate-900/60 border border-white/10 rounded-2xl p-6 space-y-4">
-          <h3 className="text-base font-bold text-white flex items-center gap-2 border-b border-white/10 pb-3">
-            <MessageSquare className="w-4 h-4 text-purple-400" />
-            Sent Announcements
-          </h3>
-
-          <div className="space-y-3">
-            {[
-              { title: "Welcome to the Platform!", target: "All Batches", date: "2026-01-15" },
-              { title: "New Physics Exam Available", target: "JEE 2026 Batch A", date: "2026-01-14" },
-            ].map((sent, i) => (
-              <div key={i} className="p-3.5 rounded-xl border border-white/10 bg-white/[0.02] space-y-1">
-                <span className="px-2 py-0.5 bg-purple-500/20 text-purple-300 text-[9px] font-bold rounded border border-purple-500/30 uppercase">
-                  {sent.target}
-                </span>
-                <p className="font-bold text-xs text-white mt-1">{sent.title}</p>
-                <p className="text-[10px] text-slate-500 text-right">{sent.date}</p>
+        <div className="space-y-3 lg:col-span-3">
+          {loading ? <PageLoader /> : error ? <ErrorState message={error} onRetry={reload} /> : !data?.length ? (
+            <Card><EmptyState icon={Megaphone} title="No announcements yet" description="Posts you publish will be listed here." /></Card>
+          ) : data.map((a) => (
+            <Card key={a.id} className="p-5">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-sm font-semibold text-white">{a.title}</h3>
+                    <Badge>{AUDIENCE_LABEL[a.audience] ?? a.audience}</Badge>
+                    {a.priority === "HIGH" && <Badge tone="rose">Important</Badge>}
+                  </div>
+                  <p className="mt-2 whitespace-pre-wrap text-sm text-slate-300">{a.body}</p>
+                  <p className="mt-2 text-xs text-slate-500">{a.author.name} · {formatDate(a.createdAt)}</p>
+                </div>
+                {canDelete(a) && (
+                  <button onClick={() => remove(a.id)} className="rounded-lg p-2 text-slate-500 hover:bg-rose-500/10 hover:text-rose-400" aria-label="Delete announcement"><Trash2 className="h-4 w-4" /></button>
+                )}
               </div>
-            ))}
-          </div>
+            </Card>
+          ))}
         </div>
-
       </div>
-
     </div>
   );
 }

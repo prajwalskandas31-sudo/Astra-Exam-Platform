@@ -1,192 +1,128 @@
 "use client";
 
-import { useState } from "react";
-import { Building2, Save, Globe, Phone, Mail, Image as ImageIcon, Sparkles, CheckCircle2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { Building2, Palette } from "lucide-react";
+import { Badge, Btn, Card, CardHeader, ErrorState, Field, PageHeader, PageLoader, inputClass } from "@/components/ui/kit";
+import { apiFetch, useApi } from "@/lib/fetcher";
 
-export default function OrganizationBrandingPage() {
-  const [name, setName] = useState("Apex Academy");
-  const [slug, setSlug] = useState("apex-academy");
-  const [logoUrl, setLogoUrl] = useState("https://apexacademy.in/logo.png");
-  const [primaryColor, setPrimaryColor] = useState("#3b82f6");
-  const [secondaryColor, setSecondaryColor] = useState("#1e40af");
-  const [contactEmail, setContactEmail] = useState("admin@apexacademy.in");
-  const [contactPhone, setContactPhone] = useState("+91 98765 43210");
-  const [customDomain, setCustomDomain] = useState("tests.apexacademy.in");
-  const [academicYear, setAcademicYear] = useState("2026-2027");
-  const [offeredCategories, setOfferedCategories] = useState<string[]>(["JEE", "NEET"]);
+interface Org {
+  id: string;
+  name: string;
+  slug: string;
+  logoUrl: string | null;
+  primaryColor: string | null;
+  secondaryColor: string | null;
+  contactEmail: string | null;
+  contactPhone: string | null;
+  academicYear: string | null;
+  customDomain: string | null;
+  offeredCategories: string[];
+  whatsappProvider: string | null;
+}
+
+const CATEGORIES = ["PLAB", "NEET", "JEE", "GATE", "AFCAT", "COMEDK", "SSC CGL", "CUSTOM"];
+
+export default function OrganizationPage() {
+  const { data, error, loading, reload } = useApi<Org>("/api/organization");
+  const [form, setForm] = useState<Org | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const handleSave = (e: React.FormEvent) => {
-    e.preventDefault();
+  useEffect(() => {
+    if (data) setForm(data);
+  }, [data]);
+
+  const save = async () => {
+    if (!form) return;
     setSaving(true);
-    setTimeout(() => {
-      toast.success("Organization white-label settings updated!");
+    try {
+      const { id: _id, slug: _slug, whatsappProvider: _w, ...payload } = form;
+      await apiFetch("/api/organization", {
+        method: "PATCH",
+        json: Object.fromEntries(Object.entries(payload).map(([k, v]) => [k, v ?? ""])),
+      });
+      toast.success("Organization settings saved");
+      reload();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't save");
+    } finally {
       setSaving(false);
-    }, 800);
+    }
   };
 
+  if (loading || (!form && !error)) return <PageLoader />;
+  if (error || !form) return <ErrorState message={error || "Failed to load"} onRetry={reload} />;
+
+  const set = (k: keyof Org, v: string | string[]) => setForm({ ...form, [k]: v });
+
   return (
-    <div className="space-y-8 max-w-7xl mx-auto pb-16">
-      
-      <div>
-        <h1 className="text-3xl font-black text-white tracking-tight">Organization & White-Label Branding</h1>
-        <p className="text-sm text-slate-400 mt-1">Configure institute tenant branding, logo, primary colors, custom domain & WhatsApp settings</p>
-      </div>
+    <div className="space-y-6">
+      <PageHeader title="Organization" description="Institute profile, branding and the exams you offer." actions={<Btn loading={saving} onClick={save}>Save changes</Btn>} />
 
-      <form onSubmit={handleSave} className="bg-slate-900/60 border border-white/10 rounded-2xl p-6 md:p-8 space-y-6">
-        
-        <div className="border-b border-white/10 pb-4">
-          <h2 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-            <Building2 className="w-5 h-5 text-blue-400" />
-            Institute Branding Configuration
-          </h2>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-300 uppercase tracking-wider block">Institute Name</label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-              className="w-full p-3 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-blue-500 outline-none"
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-300 uppercase tracking-wider block">Tenant Slug</label>
-            <input
-              type="text"
-              value={slug}
-              onChange={(e) => setSlug(e.target.value)}
-              required
-              className="w-full p-3 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-blue-500 outline-none"
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-300 uppercase tracking-wider block">Contact Email</label>
-            <input
-              type="email"
-              value={contactEmail}
-              onChange={(e) => setContactEmail(e.target.value)}
-              className="w-full p-3 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-blue-500 outline-none"
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-300 uppercase tracking-wider block">Contact Phone</label>
-            <input
-              type="text"
-              value={contactPhone}
-              onChange={(e) => setContactPhone(e.target.value)}
-              className="w-full p-3 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-blue-500 outline-none"
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-300 uppercase tracking-wider block">Primary Brand Color</label>
-            <div className="flex items-center gap-3">
-              <input
-                type="color"
-                value={primaryColor}
-                onChange={(e) => setPrimaryColor(e.target.value)}
-                className="w-10 h-10 rounded-xl bg-slate-950 border border-white/10 cursor-pointer"
-              />
-              <input
-                type="text"
-                value={primaryColor}
-                onChange={(e) => setPrimaryColor(e.target.value)}
-                className="flex-1 p-3 bg-slate-950 border border-white/10 rounded-xl text-xs text-white uppercase font-mono"
-              />
+      <div className="grid gap-6 lg:grid-cols-3">
+        <Card className="lg:col-span-2">
+          <CardHeader title="Institute profile" icon={Building2} />
+          <div className="grid gap-4 p-5 sm:grid-cols-2">
+            <div className="sm:col-span-2"><Field label="Institute name"><input value={form.name} onChange={(e) => set("name", e.target.value)} className={inputClass} /></Field></div>
+            <Field label="Contact email"><input type="email" value={form.contactEmail ?? ""} onChange={(e) => set("contactEmail", e.target.value)} className={inputClass} /></Field>
+            <Field label="Contact phone"><input value={form.contactPhone ?? ""} onChange={(e) => set("contactPhone", e.target.value)} className={inputClass} /></Field>
+            <Field label="Academic year"><input value={form.academicYear ?? ""} onChange={(e) => set("academicYear", e.target.value)} className={inputClass} placeholder="2026-2027" /></Field>
+            <Field label="Custom domain" hint="Point a CNAME at this deployment, then enter it here."><input value={form.customDomain ?? ""} onChange={(e) => set("customDomain", e.target.value)} className={inputClass} placeholder="exams.yourinstitute.com" /></Field>
+            <div className="sm:col-span-2"><Field label="Logo URL"><input value={form.logoUrl ?? ""} onChange={(e) => set("logoUrl", e.target.value)} className={inputClass} placeholder="https://…/logo.png" /></Field></div>
+            <div className="sm:col-span-2 space-y-2">
+              <p className="text-xs font-medium text-slate-300">Exams offered</p>
+              <div className="flex flex-wrap gap-2">
+                {CATEGORIES.map((c) => {
+                  const on = form.offeredCategories.includes(c);
+                  return (
+                    <button
+                      key={c}
+                      aria-pressed={on}
+                      onClick={() => set("offeredCategories", on ? form.offeredCategories.filter((x) => x !== c) : [...form.offeredCategories, c])}
+                      className={on ? "rounded-lg border border-blue-500 bg-blue-600/20 px-3 py-1.5 text-xs font-semibold text-blue-200" : "rounded-lg border border-white/10 px-3 py-1.5 text-xs text-slate-400 hover:text-white"}
+                    >
+                      {c}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
+        </Card>
 
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-300 uppercase tracking-wider block">Secondary Brand Color</label>
-            <div className="flex items-center gap-3">
-              <input
-                type="color"
-                value={secondaryColor}
-                onChange={(e) => setSecondaryColor(e.target.value)}
-                className="w-10 h-10 rounded-xl bg-slate-950 border border-white/10 cursor-pointer"
-              />
-              <input
-                type="text"
-                value={secondaryColor}
-                onChange={(e) => setSecondaryColor(e.target.value)}
-                className="flex-1 p-3 bg-slate-950 border border-white/10 rounded-xl text-xs text-white uppercase font-mono"
-              />
-            </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-300 uppercase tracking-wider block">Custom Domain (CNAME)</label>
-            <input
-              type="text"
-              value={customDomain}
-              onChange={(e) => setCustomDomain(e.target.value)}
-              placeholder="e.g. tests.coaching.com"
-              className="w-full p-3 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-blue-500 outline-none"
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-300 uppercase tracking-wider block">Academic Year</label>
-            <input
-              type="text"
-              value={academicYear}
-              onChange={(e) => setAcademicYear(e.target.value)}
-              className="w-full p-3 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-blue-500 outline-none"
-            />
-          </div>
-
-          <div className="space-y-1.5 md:col-span-2 mt-4">
-            <label className="text-xs font-bold text-slate-300 uppercase tracking-wider block mb-2">Offered Exam Categories</label>
-            <p className="text-xs text-slate-400 mb-3">Select the specific examinations offered to your students. This controls what they see on their dashboard.</p>
-            <div className="flex flex-wrap gap-3">
-              {["JEE", "NEET", "GATE", "AFCAT", "SSC", "CUSTOM"].map(cat => (
-                <label key={cat} className={`flex items-center gap-2 px-4 py-2 rounded-xl border cursor-pointer transition-all ${
-                  offeredCategories.includes(cat) 
-                    ? "bg-blue-600/20 border-blue-500 text-blue-300" 
-                    : "bg-slate-900/50 border-white/10 text-slate-400 hover:bg-slate-800"
-                }`}>
-                  <input 
-                    type="checkbox"
-                    className="hidden"
-                    checked={offeredCategories.includes(cat)}
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        setOfferedCategories([...offeredCategories, cat]);
-                      } else {
-                        setOfferedCategories(offeredCategories.filter(c => c !== cat));
-                      }
-                    }}
-                  />
-                  <CheckCircle2 className={`w-4 h-4 ${offeredCategories.includes(cat) ? "opacity-100" : "opacity-0 hidden"}`} />
-                  <span className="text-sm font-semibold">{cat}</span>
-                </label>
+        <div className="space-y-6">
+          <Card>
+            <CardHeader title="Branding" icon={Palette} />
+            <div className="space-y-4 p-5">
+              {(["primaryColor", "secondaryColor"] as const).map((k) => (
+                <Field key={k} label={k === "primaryColor" ? "Primary colour" : "Secondary colour"}>
+                  <div className="flex gap-2">
+                    <input type="color" value={form[k] ?? "#2563eb"} onChange={(e) => set(k, e.target.value)} className="h-10 w-12 cursor-pointer rounded-lg border border-white/10 bg-transparent" aria-label={k} />
+                    <input value={form[k] ?? ""} onChange={(e) => set(k, e.target.value)} className={inputClass} />
+                  </div>
+                </Field>
               ))}
+              <div className="rounded-xl border border-white/10 p-4">
+                <p className="mb-2 text-[11px] text-slate-500">Preview</p>
+                <div className="flex items-center gap-3">
+                  {form.logoUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={form.logoUrl} alt="" className="h-10 w-10 rounded-lg object-cover" />
+                  ) : (
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg font-bold text-white" style={{ background: `linear-gradient(135deg, ${form.primaryColor}, ${form.secondaryColor})` }}>{form.name.charAt(0)}</div>
+                  )}
+                  <span className="font-semibold text-white">{form.name}</span>
+                </div>
+              </div>
             </div>
-          </div>
-
+          </Card>
+          <Card className="p-5">
+            <p className="text-sm font-semibold text-white">WhatsApp notifications</p>
+            <p className="mt-1 text-xs text-slate-400">Provider: {form.whatsappProvider ? <Badge>{form.whatsappProvider}</Badge> : "not configured"}</p>
+            <p className="mt-2 text-xs text-slate-500">Messages are currently simulated and recorded in Notification Logs until a provider is connected.</p>
+          </Card>
         </div>
-
-        <Button
-          type="submit"
-          disabled={saving}
-          className="bg-blue-600 hover:bg-blue-500 text-white font-bold h-11 px-8 rounded-xl shadow-lg shadow-blue-600/30 text-xs flex items-center gap-2"
-        >
-          <Save className="w-4 h-4" />
-          {saving ? "Saving Changes..." : "Save White-Label Configuration"}
-        </Button>
-
-      </form>
-
+      </div>
     </div>
   );
 }

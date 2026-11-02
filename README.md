@@ -1,47 +1,93 @@
-# Astra - Exam Platform
+# Astra — Exam Platform
 
-An advanced, multi-tenant CBT (Computer-Based Test) & OMR assessment engine designed for medical doctors, engineering aspirants, and coaching institutes worldwide.
+A multi-tenant CBT/OMR assessment platform for coaching institutes (PLAB, NEET, JEE, GATE and custom exams), with portals for students, faculty/mentors, institute admins and parents.
 
 ## Features
 
-- ⚡ **Authentic CBT Exam Replica**: True-to-life software simulation matching GMC UK, NTA, & GATE test environments.
-- 📝 **Interactive Pen-Paper OMR Simulator**: Practice OMR bubble filling with instant OCR-style grading.
-- 🛡️ **Anti-Cheat & Live Proctoring**: Full-screen lockdown, tab-switch detection, and anti-cheat event logs.
-- 🤖 **AI Weakness Retests**: Automated 1-click test generation targeting weak subjects and chapters.
-- 📊 **WhatsApp Report Dispatch**: Encrypted AES-256 WhatsApp report cards sent instantly to parents.
-- 🏢 **Multi-Tenant White-Labeling**: Subdomain isolation, custom watermarks, and institute-branded test series.
+- **CBT exam engine**: fullscreen proctoring (tab switch / focus / fullscreen exit, auto-submit at the limit), 5-state question palette, autosave with offline backup and resume, auto-submit at 00:00, single/multi-select and numerical questions, keyboard shortcuts, GATE calculator.
+- **OMR mode**: bubble-sheet simulation for pen-and-paper practice.
+- **Results & analytics**: score, accuracy, rank/percentile, subject/chapter/difficulty breakdowns, weak/strong topics, answer review with explanations.
+- **Practice tools**: targeted retests (wrong / skipped / weak topics), custom quiz builder (subject, topic, difficulty, unseen or previously-missed questions), mistakes notebook, bookmarks with notes.
+- **Study plan**: exam-date countdown, daily question goal, study streak, 12-week activity heatmap and an explainable readiness score (50% recent accuracy, 30% syllabus coverage, 20% consistency).
+- **Daily Review**: every question answered wrongly in a test is scheduled for spaced-repetition review (SM-2), with Again/Hard/Good/Easy grading and keyboard shortcuts.
+- **Peer comparison**: on each result, you vs average vs topper (score, accuracy, time, per subject), a top-10 leaderboard, and per-question "% got it right / average time".
+- **Question reports**: students flag wrong or unclear questions; faculty fix the answer key or explanation inline and resolve every report on that question.
+- **Test results & item analysis**: per-test results table with CSV export, score distribution, and per-question difficulty, discrimination index and answer distribution, with automatic flags for suspect answer keys.
+- **Faculty tools**: question bank (manual, JSON and AI PDF import), test builder with templates and scheduling, student reports with feedback, announcements, study-material library.
+- **Admin tools**: organization branding, users and roles, batches, approvals, analytics, notification logs.
+- **Parent portal**: linked children, report cards, weakness tracker, mock-test requests, and the child's study habits (streak, consistency, exam countdown, readiness).
 
-## Getting Started
+## Getting started
 
-First, run the development server:
+The app uses Postgres (Neon, provisioned through the Vercel Marketplace). There are two databases:
+`astra-prod` for production only, and `astra-dev` for local development and preview deployments.
 
 ```bash
+npm install
+npx vercel link                      # once: link to the astra-exam-platform project
+npx vercel env pull .env.local       # development variables (astra-dev database)
+# Prisma's CLI reads .env, so copy DATABASE_URL and DATABASE_URL_UNPOOLED from .env.local into .env
+npm run db:setup                     # apply migrations and seed demo data (dev database only)
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Schema changes: edit `prisma/schema.prisma`, run `npx prisma migrate dev --name <change>`, and commit the
+new folder in `prisma/migrations`. Every deploy runs `prisma migrate deploy` against its own database.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Environment variables
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Variable | Where | Purpose |
+| --- | --- | --- |
+| `DATABASE_URL`, `DATABASE_URL_UNPOOLED` | all | Postgres (pooled for the app, direct for migrations); set by the Neon integration |
+| `NEXTAUTH_SECRET` | all | session, report-link and messaging-credential encryption key |
+| `NEXTAUTH_URL` | production | public base URL used in WhatsApp/SMS links |
+| `CRON_SECRET` | production | protects the weekly digest cron endpoint |
+| `GEMINI_API_KEY` | optional | AI extraction of questions from PDFs |
 
-## Learn More
+WhatsApp/SMS credentials are not environment variables: each institute enters its own in Admin → WhatsApp & SMS
+(stored encrypted).
 
-To learn more about Next.js, take a look at the following resources:
+### First admin in a new database
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+npx tsx prisma/create-admin.ts --institute "Apex Coaching" --name "Asha Rao" --email asha@apex.in
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Prints a one-time password. Add `--super` for a platform super admin.
 
-## Deploy on Vercel
+### Demo accounts (dev database only, password `password123`)
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+| Role | Email |
+| --- | --- |
+| Student | `student@astra.com` |
+| Mentor | `mentor@astra.com` |
+| Faculty | `faculty@apex.com` |
+| Institute admin | `admin@apex.com` |
+| Parent (linked to the student) | `parent@astra.com` |
+| Super admin | `superadmin@platform.com` |
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+New sign-ups: students and parents are active immediately; mentor sign-ups wait for admin approval. Admin roles can only be granted by an admin.
+
+## Deployment and CI
+
+- Every pull request runs lint, typecheck, unit tests, migrations, build and Playwright end-to-end tests
+  (`.github/workflows/ci.yml`, with a throwaway Postgres). `main` requires these checks to pass.
+- Merging into `main` deploys production on Vercel (Singapore region, next to the database). PRs get preview deployments
+  backed by the dev database.
+- The weekly parent/student digest runs every Monday 09:00 IST via Vercel Cron (`vercel.json`).
+
+## Messaging
+
+Each institute connects its own WhatsApp (Meta Cloud API or Twilio) and SMS (MSG91 with DLT templates, or Twilio)
+in Admin → WhatsApp & SMS. Messages are logged as *accepted* when a provider takes them and *delivered*, *read* or
+*failed* when the provider reports back through the delivery-report URL shown on that page. Until an institute
+connects a provider, messages are logged as skipped with the reason.
+
+## Not yet connected
+
+- **Payments** on the parent fees page are demo data; no gateway is connected.
+- **Study materials** are shared as links (Drive, YouTube, PDFs); file upload needs a storage provider.
+
+## Development note
+
+If the project folder is synced by OneDrive, Turbopack's dev cache in `.next/` can be corrupted by the sync (symptoms: random 404s or `Failed to open SST file` in the dev log). Exclude `.next` from sync, move the project outside OneDrive, or use `npm run build && npm start`.

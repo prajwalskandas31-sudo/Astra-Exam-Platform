@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 
 export async function GET() {
   try {
@@ -9,11 +10,17 @@ export async function GET() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const firstChild = await prisma.parentStudentLink.findFirst({
+      where: { parentId: session.user.id },
+      include: { student: { select: { name: true } } }
+    });
+    const studentName = firstChild?.student.name || "Linked student";
+
     const invoices = [
       {
         id: "INV-2026-001",
         title: "Annual CBT Exam Platform & Mock Test Series Fee (2026-27)",
-        studentName: session.user.name ? `${session.user.name.split(" ")[0]}'s Child` : "Rahul Sharma",
+        studentName,
         dueDate: "2026-10-15",
         amount: 15000,
         paidAmount: 15000,
@@ -25,7 +32,7 @@ export async function GET() {
       {
         id: "INV-2026-002",
         title: "Term 2 Intensive Mock Test Pack & Proctored Remote Access",
-        studentName: session.user.name ? `${session.user.name.split(" ")[0]}'s Child` : "Rahul Sharma",
+        studentName,
         dueDate: "2026-10-25",
         amount: 8500,
         paidAmount: 0,
@@ -37,7 +44,7 @@ export async function GET() {
       {
         id: "INV-2026-003",
         title: "AFCAT & GATE Special Exam Prep Extension Pack",
-        studentName: session.user.name ? `${session.user.name.split(" ")[0]}'s Child` : "Rahul Sharma",
+        studentName,
         dueDate: "2026-11-10",
         amount: 4500,
         paidAmount: 0,
@@ -56,7 +63,7 @@ export async function GET() {
       nextDueDate: "2026-10-25"
     };
 
-    return NextResponse.json({ summary, invoices });
+    return NextResponse.json({ summary, invoices, demo: true });
   } catch (error) {
     console.error("[PARENT_PAYMENTS_GET]", error);
     return NextResponse.json({ error: "Internal Error" }, { status: 500 });
@@ -71,10 +78,15 @@ export async function POST(req: Request) {
     }
 
     const { invoiceId, paymentMethod = "UPI" } = await req.json();
+    if (typeof invoiceId !== "string" || !invoiceId) {
+      return NextResponse.json({ error: "invoiceId is required" }, { status: 400 });
+    }
 
+    // Demo mode: no payment gateway is connected, so nothing is charged
     return NextResponse.json({
       success: true,
-      message: `Payment of ₹8,500 for ${invoiceId} processed successfully via ${paymentMethod}!`,
+      demo: true,
+      message: `Demo payment recorded for ${invoiceId} via ${paymentMethod}. No real charge was made.`,
       transactionId: `TXN${Math.floor(10000000 + Math.random() * 90000000)}`
     });
   } catch (error) {

@@ -1,101 +1,90 @@
 "use client";
 
 import { useState } from "react";
-import { Layers, Plus, Users, BookOpen, Target, CheckCircle2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import Link from "next/link";
 import { toast } from "sonner";
+import { Layers, Plus, Trash2 } from "lucide-react";
+import { Badge, Btn, Card, EmptyState, ErrorState, PageHeader, PageLoader, formatDate, inputClass, scoreTone } from "@/components/ui/kit";
+import { apiFetch, useApi } from "@/lib/fetcher";
 
-export default function AdminBatchesPage() {
-  const [batchName, setBatchName] = useState("");
-  const [examCategory, setExamCategory] = useState("JEE");
+interface Batch {
+  id: string;
+  name: string;
+  createdAt: string;
+  studentCount: number;
+  testCount: number;
+  attemptCount: number;
+  avgPercentage: number | null;
+}
 
-  const batches = [
-    { id: "b-1", name: "JEE 2026 Batch A", category: "JEE", students: 42, mentor: "Dr. Rajesh Sharma" },
-    { id: "b-2", name: "NEET Achievers 2026", category: "NEET", students: 38, mentor: "Dr. Ananya Roy" },
-    { id: "b-3", name: "COMEDK FastTrack", category: "COMEDK", students: 25, mentor: "Faculty Team" },
-  ];
+export default function BatchesPage() {
+  const { data, error, loading, reload } = useApi<Batch[]>("/api/batches");
+  const [name, setName] = useState("");
+  const [saving, setSaving] = useState(false);
 
-  const handleCreateBatch = (e: React.FormEvent) => {
+  const create = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!batchName) return;
-    toast.success(`Batch '${batchName}' created successfully!`);
-    setBatchName("");
+    setSaving(true);
+    try {
+      await apiFetch("/api/batches", { method: "POST", json: { name } });
+      toast.success(`Batch "${name}" created`);
+      setName("");
+      reload();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't create batch");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const remove = async (b: Batch) => {
+    if (!window.confirm(`Delete "${b.name}"? Its ${b.studentCount} students will become unassigned (their accounts and results are kept).`)) return;
+    try {
+      await apiFetch(`/api/batches?id=${b.id}`, { method: "DELETE" });
+      toast.success("Batch deleted");
+      reload();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't delete batch");
+    }
   };
 
   return (
-    <div className="space-y-8 max-w-7xl mx-auto pb-16">
-      
-      <div>
-        <h1 className="text-3xl font-black text-white tracking-tight">Batch Management</h1>
-        <p className="text-sm text-slate-400 mt-1">Organize students into target exam cohorts and assign faculty leads</p>
-      </div>
+    <div className="space-y-6">
+      <PageHeader title="Batches" description="Group students into batches. Assign students to a batch from the Users page." />
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        
-        {/* Create Batch Form (1 col) */}
-        <form onSubmit={handleCreateBatch} className="bg-slate-900/60 border border-white/10 rounded-2xl p-6 space-y-4 h-fit">
-          <h2 className="text-base font-bold text-white flex items-center gap-2 border-b border-white/10 pb-3">
-            <Plus className="w-4 h-4 text-blue-400" />
-            Create New Batch
-          </h2>
-
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-300 uppercase tracking-wider block">Batch Name</label>
-            <input 
-              type="text"
-              value={batchName}
-              onChange={(e) => setBatchName(e.target.value)}
-              placeholder="e.g. JEE Main 2027 Dropper Batch"
-              required
-              className="w-full p-3 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-blue-500 outline-none"
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-300 uppercase tracking-wider block">Target Exam Category</label>
-            <select
-              value={examCategory}
-              onChange={(e) => setExamCategory(e.target.value)}
-              className="w-full p-3 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-blue-500 outline-none"
-            >
-              <option value="JEE">JEE Main & Advanced</option>
-              <option value="NEET">NEET (UG)</option>
-              <option value="GATE">GATE CBT</option>
-              <option value="AFCAT">AFCAT CBT</option>
-              <option value="COMEDK">COMEDK UGET</option>
-            </select>
-          </div>
-
-          <Button type="submit" className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold h-10 text-xs rounded-xl shadow-lg shadow-blue-600/30">
-            Create Batch
-          </Button>
+      <Card className="p-4">
+        <form onSubmit={create} className="flex flex-col gap-2 sm:flex-row">
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="New batch name, e.g. PLAB 1 — March 2027" className={inputClass} />
+          <Btn type="submit" loading={saving} disabled={!name.trim()} className="shrink-0"><Plus className="h-4 w-4" />Create batch</Btn>
         </form>
+      </Card>
 
-        {/* Batches List (2 cols) */}
-        <div className="lg:col-span-2 bg-slate-900/60 border border-white/10 rounded-2xl p-6 space-y-4">
-          <h2 className="text-base font-bold text-white flex items-center gap-2 border-b border-white/10 pb-3">
-            <Layers className="w-4 h-4 text-emerald-400" />
-            Active Coaching Batches ({batches.length})
-          </h2>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {batches.map((b) => (
-              <div key={b.id} className="p-5 rounded-xl border border-white/10 bg-white/[0.02] space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="px-2 py-0.5 bg-blue-500/20 text-blue-300 border border-blue-500/30 text-[10px] font-bold rounded uppercase">
-                    {b.category}
-                  </span>
-                  <span className="text-xs font-bold text-slate-400">{b.students} Students</span>
+      {loading ? <PageLoader /> : error ? <ErrorState message={error} onRetry={reload} /> : !data?.length ? (
+        <Card><EmptyState icon={Layers} title="No batches yet" description="Create your first batch above." /></Card>
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {data.map((b) => (
+            <Card key={b.id} className="p-5">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="font-semibold text-white">{b.name}</p>
+                  <p className="text-xs text-slate-500">Created {formatDate(b.createdAt)}</p>
                 </div>
-                <h3 className="font-bold text-white text-base">{b.name}</h3>
-                <p className="text-xs text-slate-400">Mentor Lead: <strong className="text-slate-300">{b.mentor}</strong></p>
+                <button onClick={() => remove(b)} className="rounded-lg p-1.5 text-slate-500 hover:bg-rose-500/10 hover:text-rose-400" aria-label={`Delete ${b.name}`}><Trash2 className="h-4 w-4" /></button>
               </div>
-            ))}
-          </div>
+              <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+                <div className="rounded-lg bg-white/[0.03] p-2"><p className="text-lg font-bold text-white">{b.studentCount}</p><p className="text-[11px] text-slate-500">students</p></div>
+                <div className="rounded-lg bg-white/[0.03] p-2"><p className="text-lg font-bold text-white">{b.attemptCount}</p><p className="text-[11px] text-slate-500">attempts</p></div>
+                <div className="rounded-lg bg-white/[0.03] p-2">
+                  {b.avgPercentage != null ? <Badge tone={scoreTone(b.avgPercentage)}>{b.avgPercentage}%</Badge> : <p className="text-lg font-bold text-slate-600">—</p>}
+                  <p className="mt-1 text-[11px] text-slate-500">avg score</p>
+                </div>
+              </div>
+            </Card>
+          ))}
         </div>
-
-      </div>
-
+      )}
+      <p className="text-xs text-slate-500">Tip: assign students to batches on the <Link href="/admin/users" className="text-blue-400 hover:underline">Users</Link> page.</p>
     </div>
   );
 }

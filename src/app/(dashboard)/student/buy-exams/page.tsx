@@ -6,6 +6,26 @@ import { ShoppingBag, Search, CheckCircle2, Star, ShieldCheck, Sparkles, Filter 
 import { toast } from "sonner";
 
 export default function BuyExamsPage() {
+  const [requesting, setRequesting] = useState<string | null>(null);
+
+  // No payment gateway is connected: "Request access" files a request the institute approves
+  const requestPackage = async (pkg: { id: string; title: string; tag: string; testsCount: number }) => {
+    setRequesting(pkg.id);
+    try {
+      const res = await fetch("/api/student/remote-test-request", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ count: Math.min(10, pkg.testsCount), category: "MOCK", examCategory: pkg.tag, notes: `Package request: ${pkg.title}` })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Request failed");
+      toast.success(`Access requested for ${pkg.title}. Your institute will confirm it.`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Request failed");
+    } finally {
+      setRequesting(null);
+    }
+  };
   const [viewMode, setViewMode] = useState<"exam" | "topic" | "class">("exam");
   const [selectedTag, setSelectedTag] = useState<string>("All");
 
@@ -178,16 +198,11 @@ export default function BuyExamsPage() {
 
             <div className="flex gap-2 pt-6">
               <Button 
-                onClick={() => toast.success(`Enrolled in ${pkg.title}`)}
-                className="w-1/2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold h-10 rounded-xl shadow-lg shadow-blue-600/30"
+                onClick={() => requestPackage(pkg)}
+                disabled={requesting === pkg.id}
+                className="w-full bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold h-10 rounded-xl shadow-lg shadow-blue-600/30"
               >
-                Buy Now
-              </Button>
-              <Button 
-                variant="outline"
-                className="w-1/2 bg-white/5 border-white/10 text-slate-300 hover:bg-white/10 text-xs font-bold h-10 rounded-xl"
-              >
-                View Details
+                {requesting === pkg.id ? "Requesting…" : "Request access"}
               </Button>
             </div>
           </div>

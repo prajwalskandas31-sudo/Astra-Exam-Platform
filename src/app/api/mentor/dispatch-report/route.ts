@@ -1,88 +1,46 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { generateReportToken } from "@/lib/reportTokens";
+import { jsonError, requireRole } from "@/lib/api";
+import { STAFF_ROLES } from "@/lib/roles";
+import { canViewAttempt, isFinished } from "@/lib/attempts";
+import { appBaseUrl } from "@/lib/reportLinks";
+import { sendResult, type Audience } from "@/lib/messaging/automations";
 
+/** Staff: (re)send one attempt's report card. Body: { attemptId, audience?: "PARENTS" | "STUDENT" | "BOTH" } */
 export async function POST(req: Request) {
   try {
-    const session = await getServerSession(authOptions);
+    const { session, error } = await requireRole(STAFF_ROLES);
+    if (error) return error;
 
-    if (!session || !["ADMIN", "MENTOR", "FACULTY", "SUPER_ADMIN"].includes(session.user.role)) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const { attemptId, channel = "WHATSAPP" } = await req.json();
-
-    if (!attemptId) {
-      return NextResponse.json({ error: "attemptId is required" }, { status: 400 });
-    }
+    const { attemptId, audience = "BOTH" } = await req.json();
+    if (typeof attemptId !== "string" || !attemptId) return jsonError("attemptId is required");
+    if (!["PARENTS", "STUDENT", "BOTH"].includes(audience)) return jsonError("Invalid audience");
 
     const attempt = await prisma.attempt.findUnique({
       where: { id: attemptId },
-      include: {
-        user: {
-          include: {
-            parentLinks: {
-              include: { parent: true }
-            }
-          }
-        },
-        test: true
-      }
+      include: { user: { select: { name: true, organizationId: true } }, test: { select: { title: true } } },
     });
+    if (!attempt || !(await canViewAttempt(session, attempt))) return jsonError("Attempt not found", 404);
+    if (!isFinished(attempt.status)) return jsonError("This attempt hasn't been submitted yet");
 
-    if (!attempt) {
-      return NextResponse.json({ error: "Attempt not found" }, { status: 404 });
+    const result = await sendResult(attempt.id, appBaseUrl(req), audience as Audience);
+    if (result.recipients === 0) {
+      return jsonError(audience === "PARENTS" ? "No parent is linked to this student yet" : "reason" in result ? String(result.reason) : "Nobody to send to");
     }
-
-    // Generate secure token valid for 30 days
-    const token = generateReportToken(attempt.id, attempt.userId);
-    const origin = req.headers.get("origin") || process.env.NEXTAUTH_URL || "http://localhost:3000";
-    const reportUrl = `${origin}/report/${token}`;
-
-    const parentPhones = attempt.user.parentLinks
-      .map((link) => link.parent.phone)
-      .filter(Boolean);
-
-    const recipientPhone = parentPhones.length > 0 ? parentPhones[0] : attempt.user.phone || "+91 9876543210";
-
-    const payloadText = JSON.stringify({
-      studentName: attempt.user.name,
-      testTitle: attempt.test.title,
-      score: attempt.score,
-      totalMarks: attempt.test.totalMarks,
-      accuracy: attempt.accuracy,
-      rank: attempt.rank || 1,
-      reportUrl,
-      channel
-    });
-
-    // Save notification log in database
-    const notificationLog = await prisma.notificationLog.create({
-      data: {
-        recipientPhone: recipientPhone || "N/A",
-        type: channel === "WHATSAPP" ? "RESULT_NOTIFICATION_WHATSAPP" : "RESULT_NOTIFICATION_EMAIL",
-        status: "SENT",
-        payload: payloadText,
-        reportUrl: reportUrl
-      }
-    });
 
     return NextResponse.json({
       success: true,
-      reportUrl,
-      notificationLog,
-      recipientPhone,
+      reportUrl: "link" in result ? result.link : null,
+      recipients: result.recipients,
+      sent: result.sent,
       studentName: attempt.user.name,
       testTitle: attempt.test.title,
-      message: `Report card successfully dispatched to parent via ${channel}!`
+      message: result.sent > 0
+        ? `Report accepted for delivery to ${result.sent} of ${result.recipients} recipient${result.recipients === 1 ? "" : "s"} — delivery is confirmed in Notification Logs`
+        : `Report link created, but nothing was delivered — check Notification Logs for the reason`,
     });
-
   } catch (error) {
     console.error("[DISPATCH_REPORT_POST]", error);
     return NextResponse.json({ error: "Internal Error" }, { status: 500 });
   }
 }
-
-
