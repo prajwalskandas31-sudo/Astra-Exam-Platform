@@ -1,7 +1,7 @@
 name: CI
 
 # Runs on every pull request and on main. Production deploys are done by Vercel's Git
-# integration when a PR is merged into main; protect main so this check must pass first.
+# integration when a PR is merged into main; branch protection requires these checks first.
 on:
   pull_request:
   push:
@@ -13,7 +13,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  DATABASE_URL: file:./ci.db
+  DATABASE_URL: postgresql://postgres:postgres@localhost:5432/astra_ci
+  DATABASE_URL_UNPOOLED: postgresql://postgres:postgres@localhost:5432/astra_ci
   NEXTAUTH_SECRET: ci-only-secret-not-used-in-production
   NEXTAUTH_URL: http://localhost:3000
 
@@ -22,6 +23,15 @@ jobs:
     name: Lint, typecheck, unit tests and build
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: astra_ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -29,33 +39,31 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npx prisma generate
       - name: Lint
         run: npm run lint
       - name: Typecheck
         run: npm run typecheck
       - name: Unit tests
         run: npm run test:unit
-      - name: Create and seed database
+      - name: Migrations apply cleanly and seed works
         run: npm run db:setup
       - name: Build
         run: npm run build
-      - name: Upload build
-        uses: actions/upload-artifact@v4
-        with:
-          name: next-build
-          path: |
-            .next
-            !.next/cache
-            prisma/ci.db
-          include-hidden-files: true
-          retention-days: 1
 
   e2e:
     name: End-to-end tests
     needs: checks
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: astra_ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -63,10 +71,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npx prisma generate
-      - uses: actions/download-artifact@v4
-        with:
-          name: next-build
+      - run: npm run db:setup
+      - run: npm run build
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
       - name: Run Playwright against the production build

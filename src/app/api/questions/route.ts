@@ -25,10 +25,10 @@ export async function GET(request: Request) {
     if (search) {
       filters.push({
         OR: [
-          { text: { contains: search } },
-          { topic: { contains: search } },
-          { chapter: { contains: search } },
-          { tags: { contains: search } }
+          { text: { contains: search, mode: "insensitive" } },
+          { topic: { contains: search, mode: "insensitive" } },
+          { chapter: { contains: search, mode: "insensitive" } },
+          { tags: { contains: search, mode: "insensitive" } }
         ]
       });
     }

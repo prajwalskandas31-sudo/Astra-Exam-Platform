@@ -19,23 +19,43 @@ A multi-tenant CBT/OMR assessment platform for coaching institutes (PLAB, NEET, 
 
 ## Getting started
 
+The app uses Postgres (Neon, provisioned through the Vercel Marketplace). There are two databases:
+`astra-prod` for production only, and `astra-dev` for local development and preview deployments.
+
 ```bash
 npm install
-npx prisma db push      # create/update the SQLite schema
-npx prisma db seed      # demo institute, users, question bank, tests and sample results
+npx vercel link                      # once: link to the astra-exam-platform project
+npx vercel env pull .env.local       # development variables (astra-dev database)
+# Prisma's CLI reads .env, so copy DATABASE_URL and DATABASE_URL_UNPOOLED from .env.local into .env
+npm run db:setup                     # apply migrations and seed demo data (dev database only)
 npm run dev
 ```
 
-### Environment variables (`.env`)
+Schema changes: edit `prisma/schema.prisma`, run `npx prisma migrate dev --name <change>`, and commit the
+new folder in `prisma/migrations`. Every deploy runs `prisma migrate deploy` against its own database.
 
-| Variable | Required | Purpose |
+### Environment variables
+
+| Variable | Where | Purpose |
 | --- | --- | --- |
-| `DATABASE_URL` | yes | e.g. `file:./dev.db` |
-| `NEXTAUTH_SECRET` | yes | session and report-link signing secret |
-| `NEXTAUTH_URL` | production | public base URL used in report links |
-| `GEMINI_API_KEY` | optional | enables AI extraction of questions from PDFs |
+| `DATABASE_URL`, `DATABASE_URL_UNPOOLED` | all | Postgres (pooled for the app, direct for migrations); set by the Neon integration |
+| `NEXTAUTH_SECRET` | all | session, report-link and messaging-credential encryption key |
+| `NEXTAUTH_URL` | production | public base URL used in WhatsApp/SMS links |
+| `CRON_SECRET` | production | protects the weekly digest cron endpoint |
+| `GEMINI_API_KEY` | optional | AI extraction of questions from PDFs |
 
-### Demo accounts (password `password123`)
+WhatsApp/SMS credentials are not environment variables: each institute enters its own in Admin → WhatsApp & SMS
+(stored encrypted).
+
+### First admin in a new database
+
+```bash
+npx tsx prisma/create-admin.ts --institute "Apex Coaching" --name "Asha Rao" --email asha@apex.in
+```
+
+Prints a one-time password. Add `--super` for a platform super admin.
+
+### Demo accounts (dev database only, password `password123`)
 
 | Role | Email |
 | --- | --- |
@@ -48,9 +68,23 @@ npm run dev
 
 New sign-ups: students and parents are active immediately; mentor sign-ups wait for admin approval. Admin roles can only be granted by an admin.
 
+## Deployment and CI
+
+- Every pull request runs lint, typecheck, unit tests, migrations, build and Playwright end-to-end tests
+  (`.github/workflows/ci.yml`, with a throwaway Postgres). `main` requires these checks to pass.
+- Merging into `main` deploys production on Vercel (Singapore region, next to the database). PRs get preview deployments
+  backed by the dev database.
+- The weekly parent/student digest runs every Monday 09:00 IST via Vercel Cron (`vercel.json`).
+
+## Messaging
+
+Each institute connects its own WhatsApp (Meta Cloud API or Twilio) and SMS (MSG91 with DLT templates, or Twilio)
+in Admin → WhatsApp & SMS. Messages are logged as *accepted* when a provider takes them and *delivered*, *read* or
+*failed* when the provider reports back through the delivery-report URL shown on that page. Until an institute
+connects a provider, messages are logged as skipped with the reason.
+
 ## Not yet connected
 
-- **WhatsApp / email delivery** is simulated — messages are recorded in Admin → Notification Logs.
 - **Payments** on the parent fees page are demo data; no gateway is connected.
 - **Study materials** are shared as links (Drive, YouTube, PDFs); file upload needs a storage provider.
 
