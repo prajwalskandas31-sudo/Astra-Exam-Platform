@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireRole } from "@/lib/api";
+import { requireRole, tenantOrGlobalWhere } from "@/lib/api";
 import { parseOptions } from "@/lib/questions";
 import { FINISHED_STATUSES } from "@/lib/attempts";
 
@@ -16,7 +16,8 @@ export async function GET(request: Request) {
     }
 
     const bookmarks = await prisma.bookmark.findMany({
-      where: { userId: session.user.id },
+      // Never return questions outside the student's institute, even if a bookmark points at one
+      where: { userId: session.user.id, question: tenantOrGlobalWhere(session) },
       include: {
         question: {
           select: {
@@ -80,7 +81,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ bookmarked: false });
     }
 
-    const question = await prisma.question.findUnique({ where: { id: questionId }, select: { id: true } });
+    const question = await prisma.question.findFirst({ where: { id: questionId, ...tenantOrGlobalWhere(session) }, select: { id: true } });
     if (!question) return NextResponse.json({ error: "Question not found" }, { status: 404 });
 
     const noteValue = typeof note === "string" ? note.trim().slice(0, 1000) || null : undefined;

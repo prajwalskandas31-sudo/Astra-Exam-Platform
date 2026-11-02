@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { studentTestVisibility } from "@/lib/attempts";
 import { requireRole, tenantOrGlobalWhere } from "@/lib/api";
 
 export async function GET() {
@@ -22,7 +23,7 @@ export async function GET() {
 
     const attemptedTestIds = new Set(attempts.map((a) => a.testId));
     const upcomingTests = await prisma.test.count({
-      where: { isPublished: true, id: { notIn: [...attemptedTestIds] }, ...tenantOrGlobalWhere(session) }
+      where: { isPublished: true, ownerId: null, id: { notIn: [...attemptedTestIds] }, ...tenantOrGlobalWhere(session), ...(await studentTestVisibility(session.user.id)) }
     });
 
     return NextResponse.json({ averageScore, averageAccuracy, testsCompleted, upcomingTests });

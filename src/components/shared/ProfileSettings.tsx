@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
-import { KeyRound, UserRound } from "lucide-react";
+import { Bell, KeyRound, UserRound } from "lucide-react";
 import { Badge, Btn, Card, CardHeader, ErrorState, Field, PageLoader, inputClass } from "@/components/ui/kit";
 import { apiFetch, useApi } from "@/lib/fetcher";
 import { ROLE_LABELS, type AppRole } from "@/lib/roles";
@@ -17,6 +17,8 @@ interface Profile {
   examTracks: string[];
   organization: { name: string } | null;
   batch: { name: string } | null;
+  notifyWhatsapp: boolean;
+  notifySms: boolean;
 }
 
 const EXAM_TRACKS = ["PLAB", "NEET", "JEE", "GATE", "AFCAT", "COMEDK", "SSC CGL"];
@@ -29,11 +31,13 @@ export function ProfileSettings() {
   const [tracks, setTracks] = useState<string[]>([]);
   const [pw, setPw] = useState({ currentPassword: "", newPassword: "", confirm: "" });
   const [saving, setSaving] = useState<string | null>(null);
+  const [prefs, setPrefs] = useState({ notifyWhatsapp: true, notifySms: true });
 
   useEffect(() => {
     if (data) {
       setForm({ name: data.name, phone: data.phone ?? "" });
       setTracks(data.examTracks);
+      setPrefs({ notifyWhatsapp: data.notifyWhatsapp, notifySms: data.notifySms });
     }
   }, [data]);
 
@@ -59,6 +63,18 @@ export function ProfileSettings() {
       toast.error(e instanceof Error ? e.message : "Couldn't save");
     } finally {
       setSaving(null);
+    }
+  };
+
+  const togglePref = async (key: keyof typeof prefs) => {
+    const next = { ...prefs, [key]: !prefs[key] };
+    setPrefs(next);
+    try {
+      await apiFetch("/api/profile", { method: "PATCH", json: { [key]: next[key] } });
+      toast.success(next[key] ? "Turned on" : "Turned off");
+    } catch (e) {
+      setPrefs(prefs);
+      toast.error(e instanceof Error ? e.message : "Couldn't save");
     }
   };
 
@@ -98,7 +114,7 @@ export function ProfileSettings() {
           <Field label="Email" hint="Contact your institute admin to change your login email.">
             <input value={data.email} disabled className={inputClass} />
           </Field>
-          <Field label="Mobile number" hint="Used for WhatsApp result notifications.">
+          <Field label="Mobile number" hint="Used for WhatsApp/SMS alerts and password-reset codes. Include the country code if you're outside the institute's country.">
             <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="+91 98765 43210" className={inputClass} />
           </Field>
           <Btn loading={saving === "profile"} onClick={saveProfile}>Save profile</Btn>
@@ -119,6 +135,18 @@ export function ProfileSettings() {
               <input type="password" autoComplete="new-password" value={pw.confirm} onChange={(e) => setPw({ ...pw, confirm: e.target.value })} className={inputClass} />
             </Field>
             <Btn variant="secondary" loading={saving === "password"} disabled={!pw.currentPassword || !pw.newPassword} onClick={changePassword}>Update password</Btn>
+          </div>
+        </Card>
+
+        <Card>
+          <CardHeader title="Notifications" icon={Bell} description="Results, new tests and weekly summaries from your institute. Password-reset codes are always sent." />
+          <div className="divide-y divide-white/[0.05]">
+            {([["notifyWhatsapp", "WhatsApp messages"], ["notifySms", "SMS messages"]] as const).map(([key, label]) => (
+              <label key={key} className="flex cursor-pointer items-center justify-between px-5 py-3 text-sm text-slate-200">
+                {label}
+                <input type="checkbox" role="switch" checked={prefs[key]} onChange={() => togglePref(key)} className="h-4 w-4 accent-blue-500" />
+              </label>
+            ))}
           </div>
         </Card>
 

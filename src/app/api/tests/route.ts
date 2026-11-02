@@ -1,8 +1,11 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireRole, tenantOrGlobalWhere } from "@/lib/api";
 import { STAFF_ROLES } from "@/lib/roles";
+import { studentTestVisibility } from "@/lib/attempts";
+import { appBaseUrl } from "@/lib/reportLinks";
+import { sendTestAssigned } from "@/lib/messaging/automations";
 
 export async function GET(request: Request) {
   try {
@@ -15,12 +18,14 @@ export async function GET(request: Request) {
     // Private custom quizzes (ownerId set) belong to one student and never appear in listings
     const where: Prisma.TestWhereInput = { ownerId: null, ...tenantOrGlobalWhere(session) };
     if (session.user.role === "STUDENT" || session.user.role === "PARENT") where.isPublished = true;
+    if (session.user.role === "STUDENT") Object.assign(where, await studentTestVisibility(session.user.id));
     if (type === "MOCK" || type === "PRACTICE") where.type = type;
 
     const tests = await prisma.test.findMany({
       where,
       include: {
         template: { select: { name: true, examCategory: true } },
+        batches: { select: { id: true, name: true } },
         attempts: {
           where: { userId: session.user.id },
           select: { id: true, status: true, score: true, percentage: true, accuracy: true, isRetry: true, createdAt: true },
@@ -66,6 +71,13 @@ export async function POST(request: Request) {
     const byId = new Map(questions.map((q) => [q.id, q]));
     const totalMarks = Math.round(questions.reduce((sum, q) => sum + (q.marks || 1), 0));
 
+    // Optional batch targeting: empty means every student in the institute
+    const batchIds: string[] = Array.isArray(body.batchIds) ? [...new Set(body.batchIds.filter((b: unknown): b is string => typeof b === "string"))] as string[] : [];
+    if (batchIds.length) {
+      const found = await prisma.batch.count({ where: { id: { in: batchIds }, ...tenantOrGlobalWhere(session) } });
+      if (found !== batchIds.length) return NextResponse.json({ error: "Some selected batches were not found" }, { status: 400 });
+    }
+
     const templateId = typeof body.templateId === "string" && body.templateId ? body.templateId : null;
     const test = await prisma.test.create({
       data: {
@@ -81,6 +93,7 @@ export async function POST(request: Request) {
         scheduledStart: body.scheduledStart ? new Date(body.scheduledStart) : null,
         scheduledEnd: body.scheduledEnd ? new Date(body.scheduledEnd) : null,
         organizationId: session.user.organizationId ?? null,
+        batches: { connect: batchIds.map((id) => ({ id })) },
         questions: {
           create: [...new Set(questionIds)].map((id, index) => ({
             question: { connect: { id } },
@@ -91,6 +104,10 @@ export async function POST(request: Request) {
       }
     });
 
+    if (test.isPublished) {
+      const baseUrl = appBaseUrl(request);
+      after(() => sendTestAssigned(test.id, baseUrl).catch((e) => console.error("[TEST_ASSIGNED_ALERT]", e)));
+    }
     return NextResponse.json(test);
   } catch (error) {
     console.error("[TESTS_POST]", error);

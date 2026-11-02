@@ -75,6 +75,12 @@ export async function POST(request: Request) {
     if (await prisma.user.findUnique({ where: { email } })) {
       return NextResponse.json({ error: "An account with this email already exists" }, { status: 409 });
     }
+    let batchId: string | null = null;
+    if (typeof body.batchId === "string" && body.batchId) {
+      const batch = await prisma.batch.findFirst({ where: { id: body.batchId, ...tenantWhere(session) } });
+      if (!batch) return NextResponse.json({ error: "Batch not found" }, { status: 400 });
+      batchId = batch.id;
+    }
 
     const user = await prisma.user.create({
       data: {
@@ -85,7 +91,7 @@ export async function POST(request: Request) {
         role,
         status: "APPROVED",
         organizationId: session.user.organizationId ?? null,
-        batchId: typeof body.batchId === "string" && body.batchId ? body.batchId : null
+        batchId
       },
       select: { id: true, name: true, email: true, role: true, status: true }
     });

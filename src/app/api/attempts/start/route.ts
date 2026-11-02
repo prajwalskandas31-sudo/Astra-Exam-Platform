@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireRole, tenantOrGlobalWhere } from "@/lib/api";
-import { serverTimeRemaining } from "@/lib/attempts";
+import { serverTimeRemaining, studentTestVisibility } from "@/lib/attempts";
 
 export async function POST(request: Request) {
   try {
@@ -14,7 +14,7 @@ export async function POST(request: Request) {
     }
 
     const test = await prisma.test.findFirst({
-      where: { id: testId, isPublished: true, ...tenantOrGlobalWhere(session) },
+      where: { id: testId, isPublished: true, ownerId: null, ...tenantOrGlobalWhere(session), ...(await studentTestVisibility(session.user.id)) },
       include: { _count: { select: { questions: true } } }
     });
 

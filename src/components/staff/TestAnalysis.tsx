@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import { toast } from "sonner";
 import Link from "next/link";
-import { AlertTriangle, ArrowLeft, BarChart3, Download, ListChecks, Users } from "lucide-react";
-import { Badge, Btn, Card, CardHeader, EmptyState, ErrorState, PageHeader, PageLoader, StatCard, Tabs, formatDate, formatDuration, scoreTone } from "@/components/ui/kit";
-import { useApi } from "@/lib/fetcher";
+import { AlertTriangle, ArrowLeft, BarChart3, Download, ListChecks, Send, Users } from "lucide-react";
+import { Badge, Btn, Card, CardHeader, EmptyState, ErrorState, Modal, PageHeader, PageLoader, StatCard, Tabs, formatDate, formatDuration, scoreTone } from "@/components/ui/kit";
+import { apiFetch, useApi } from "@/lib/fetcher";
 import { cn } from "@/lib/utils";
 
 interface Analysis {
@@ -13,6 +14,7 @@ interface Analysis {
   results: {
     attemptId: string; rank: number; student: string; email: string; batch: string; score: number; percentage: number; accuracy: number;
     correct: number; incorrect: number; skipped: number; timeTaken: number | null; violations: number; status: string; submittedAt: string;
+    reportOpens: number | null;
   }[];
   items: {
     number: number; id: string; text: string; subject: string; topic: string; difficulty: string; questionType: string; correctOption: string;
@@ -26,6 +28,23 @@ export function TestAnalysis({ testId, backHref }: { testId: string; backHref: s
   const { data, error, loading, reload } = useApi<Analysis>(`/api/tests/${testId}/analysis`);
   const [tab, setTab] = useState<"results" | "items">("results");
   const [flaggedOnly, setFlaggedOnly] = useState(false);
+  const [sendOpen, setSendOpen] = useState(false);
+  const [sending, setSending] = useState<string | null>(null);
+
+  const sendReports = async (audience: "PARENTS" | "STUDENT" | "BOTH") => {
+    setSending(audience);
+    try {
+      const res = await apiFetch<{ message: string }>(`/api/tests/${testId}/dispatch-reports`, { method: "POST", json: { audience } });
+      toast.success(res.message);
+      setSendOpen(false);
+      // Links are created as messages go out; refresh shortly so "Report" shows them
+      setTimeout(reload, 4000);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't send reports");
+    } finally {
+      setSending(null);
+    }
+  };
 
   if (loading) return <PageLoader label="Analysing results…" />;
   if (error || !data) return <ErrorState message={error || "Failed to load"} onRetry={reload} />;
@@ -44,13 +63,30 @@ export function TestAnalysis({ testId, backHref }: { testId: string; backHref: s
         badge={test.isPublished ? <Badge tone="emerald">Published</Badge> : <Badge tone="amber">Not published</Badge>}
         actions={
           results.length > 0 && (
-            // The endpoint responds with Content-Disposition: attachment, so this downloads without leaving the page
-            <Btn variant="secondary" onClick={() => { window.location.href = `/api/tests/${test.id}/analysis?format=csv`; }}>
-              <Download className="h-4 w-4" />Export CSV
-            </Btn>
+            <>
+              <Btn onClick={() => setSendOpen(true)}><Send className="h-4 w-4" />Send report cards</Btn>
+              {/* The endpoint responds with Content-Disposition: attachment, so this downloads without leaving the page */}
+              <Btn variant="secondary" onClick={() => { window.location.href = `/api/tests/${test.id}/analysis?format=csv`; }}>
+                <Download className="h-4 w-4" />Export CSV
+              </Btn>
+            </>
           )
         }
       />
+
+      <Modal
+        open={sendOpen}
+        onClose={() => setSendOpen(false)}
+        title="Send report cards"
+        description={`Each of the ${summary.participants} students' best attempt is sent with a short report link, by WhatsApp and/or SMS as set up in Admin → Messaging.`}
+        size="sm"
+      >
+        <div className="grid gap-2">
+          <Btn loading={sending === "PARENTS"} disabled={!!sending} onClick={() => sendReports("PARENTS")}>To parents</Btn>
+          <Btn variant="secondary" loading={sending === "STUDENT"} disabled={!!sending} onClick={() => sendReports("STUDENT")}>To students</Btn>
+          <Btn variant="secondary" loading={sending === "BOTH"} disabled={!!sending} onClick={() => sendReports("BOTH")}>To parents and students</Btn>
+        </div>
+      </Modal>
 
       {summary.participants === 0 ? (
         <Card><EmptyState icon={Users} title="No submissions yet" description="Results and item analysis appear once students submit this test." /></Card>
@@ -92,7 +128,7 @@ export function TestAnalysis({ testId, backHref }: { testId: string; backHref: s
           {tab === "results" ? (
             <Card className="overflow-hidden">
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[820px] text-left text-sm">
+                <table className="w-full min-w-[920px] text-left text-sm">
                   <thead className="border-b border-white/[0.06] bg-black/20 text-xs text-slate-400">
                     <tr>
                       <th className="px-5 py-3 font-medium">#</th>
@@ -102,7 +138,8 @@ export function TestAnalysis({ testId, backHref }: { testId: string; backHref: s
                       <th className="px-3 py-3 text-right font-medium">Accuracy</th>
                       <th className="px-3 py-3 text-right font-medium">✓ / ✗ / –</th>
                       <th className="px-3 py-3 text-right font-medium">Time</th>
-                      <th className="px-5 py-3 font-medium">Submitted</th>
+                      <th className="px-3 py-3 font-medium">Submitted</th>
+                      <th className="px-5 py-3 font-medium">Report</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/[0.05]">
@@ -118,10 +155,13 @@ export function TestAnalysis({ testId, backHref }: { testId: string; backHref: s
                         <td className="px-3 py-3 text-right tabular-nums text-slate-300">{r.accuracy}%</td>
                         <td className="px-3 py-3 text-right tabular-nums text-slate-400"><span className="text-emerald-400">{r.correct}</span> / <span className="text-rose-400">{r.incorrect}</span> / {r.skipped}</td>
                         <td className="px-3 py-3 text-right tabular-nums text-slate-300">{formatDuration(r.timeTaken)}</td>
-                        <td className="px-5 py-3 text-xs text-slate-400">
+                        <td className="px-3 py-3 text-xs text-slate-400">
                           {formatDate(r.submittedAt)}
                           {r.status === "AUTO_SUBMITTED" && <Badge tone="rose" className="ml-1">auto</Badge>}
                           {r.violations > 0 && <Badge tone="amber" className="ml-1">{r.violations} flags</Badge>}
+                        </td>
+                        <td className="px-5 py-3 text-xs">
+                          {r.reportOpens === null ? <span className="text-slate-500">Not sent</span> : r.reportOpens > 0 ? <Badge tone="emerald">Opened{r.reportOpens > 1 ? ` ×${r.reportOpens}` : ""}</Badge> : <Badge>Sent, unopened</Badge>}
                         </td>
                       </tr>
                     ))}

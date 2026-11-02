@@ -99,6 +99,9 @@ model User {
   examTracks      String?             // JSON array of exam categories the student is preparing for
   targetExamDate  DateTime?           // student's exam day, drives the dashboard countdown
   dailyGoal       Int                 @default(30) // questions per day
+  notifyWhatsapp  Boolean             @default(true) // opt-out of WhatsApp messages
+  notifySms       Boolean             @default(true) // opt-out of SMS messages
+  passwordResets  PasswordReset[]
   bookmarks       Bookmark[]
   reviewItems     ReviewItem[]
   studyLogs       StudyLog[]
@@ -296,16 +299,24 @@ model TestRequest {
 }
 
 model NotificationLog {
-  id             String   @id @default(cuid())
-  recipientPhone String
-  type           String   // RESULT_NOTIFICATION, TEST_ASSIGNED, WEEKLY_REPORT
-  status         String   // SENT, FAILED, PENDING
-  payload        String   // JSON payload
-  reportUrl      String?
-  organizationId String?  // tenant that sent it; logs are only visible to that institute
-  createdAt      DateTime @default(now())
+  id                String   @id @default(cuid())
+  recipientPhone    String
+  recipientName     String?
+  recipientUserId   String?  // the user it was meant for, when known
+  type              String   // RESULT_NOTIFICATION, TEST_ASSIGNED, WEEKLY_REPORT, PASSWORD_RESET, TEST_MESSAGE
+  channel           String   @default("WHATSAPP") // WHATSAPP, SMS
+  provider          String?  // META, TWILIO, MSG91
+  status            String   // SENT, FAILED, SKIPPED
+  error             String?  // why it failed or was skipped
+  providerMessageId String?
+  attempts          Int      @default(1)
+  payload           String   // JSON: message text and template variables (lets a failed message be retried)
+  reportUrl         String?
+  organizationId    String?  // tenant that sent it; logs are only visible to that institute
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @default(now()) @updatedAt
 
-  @@index([organizationId])
+  @@index([organizationId, createdAt])
 }
 
 model Bookmark {
@@ -394,4 +405,32 @@ model QuestionReport {
   resolvedAt     DateTime?
 
   @@index([organizationId, status])
+}
+
+// One-time code for resetting a password, delivered by WhatsApp/SMS. Only the hash is stored.
+model PasswordReset {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  codeHash  String
+  attempts  Int       @default(0)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, createdAt])
+}
+
+// Short, SMS-friendly link to a student's report card (/r/<code>). Tracks whether it was opened.
+model ReportLink {
+  code           String    @id // 8 random url-safe characters
+  attemptId      String
+  studentId      String
+  organizationId String?
+  clicks         Int       @default(0)
+  lastOpenedAt   DateTime?
+  expiresAt      DateTime
+  createdAt      DateTime  @default(now())
+
+  @@index([attemptId])
 }

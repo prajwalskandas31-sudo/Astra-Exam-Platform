@@ -11,7 +11,7 @@ export async function GET() {
     const user = await prisma.user.findUnique({
       where: { id: session.user.id },
       select: {
-        id: true, name: true, email: true, phone: true, role: true, createdAt: true, examTracks: true,
+        id: true, name: true, email: true, phone: true, role: true, createdAt: true, examTracks: true, notifyWhatsapp: true, notifySms: true,
         organization: { select: { name: true } },
         batch: { select: { name: true } }
       }
@@ -38,6 +38,8 @@ export async function PATCH(request: Request) {
       data.name = body.name.trim().slice(0, 100);
     }
     if (typeof body.phone === "string") data.phone = body.phone.trim().slice(0, 30) || null;
+    if (typeof body.notifyWhatsapp === "boolean") data.notifyWhatsapp = body.notifyWhatsapp;
+    if (typeof body.notifySms === "boolean") data.notifySms = body.notifySms;
 
     if (body.newPassword !== undefined) {
       if (typeof body.newPassword !== "string" || body.newPassword.length < 8) {

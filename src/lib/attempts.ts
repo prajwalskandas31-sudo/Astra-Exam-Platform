@@ -42,3 +42,22 @@ export async function canViewAttempt(session: Session, attempt: { userId: string
   }
   return false;
 }
+
+/**
+ * Which tests a student may see: tests with no batches are for the whole institute,
+ * otherwise the student must be in one of the test's batches.
+ * Wrapped in AND so it can be spread next to the tenant filter (also an OR) without replacing it.
+ */
+export async function studentTestVisibility(userId: string) {
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { batchId: true } });
+  return {
+    AND: [
+      {
+        OR: [
+          { batches: { none: {} } },
+          ...(user?.batchId ? [{ batches: { some: { id: user.batchId } } }] : []),
+        ],
+      },
+    ],
+  };
+}

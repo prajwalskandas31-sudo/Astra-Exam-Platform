@@ -51,6 +51,16 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     }
     const field = [...best.values()].sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
 
+    const links = await prisma.reportLink.findMany({
+      where: { attemptId: { in: field.map((a) => a.id) } },
+      select: { attemptId: true, clicks: true, lastOpenedAt: true },
+    });
+    const opened = new Map<string, { clicks: number; lastOpenedAt: Date | null }>();
+    for (const l of links) {
+      const cur = opened.get(l.attemptId);
+      opened.set(l.attemptId, { clicks: (cur?.clicks ?? 0) + l.clicks, lastOpenedAt: l.lastOpenedAt ?? cur?.lastOpenedAt ?? null });
+    }
+
     const results = field.map((a) => ({
       attemptId: a.id,
       rank: field.findIndex((x) => (x.score ?? 0) === (a.score ?? 0)) + 1,
@@ -67,13 +77,15 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       violations: a._count.violations,
       status: a.status,
       submittedAt: a.endTime ?? a.updatedAt,
+      // null = no report link sent yet; 0 = sent but not opened
+      reportOpens: opened.has(a.id) ? opened.get(a.id)!.clicks : null,
     }));
 
     if (new URL(request.url).searchParams.get("format") === "csv") {
-      const header = ["Rank", "Student", "Email", "Batch", "Score", "Max marks", "Percentage", "Accuracy", "Correct", "Incorrect", "Skipped", "Time (min)", "Violations", "Status", "Submitted"];
+      const header = ["Rank", "Student", "Email", "Batch", "Score", "Max marks", "Percentage", "Accuracy", "Correct", "Incorrect", "Skipped", "Time (min)", "Violations", "Status", "Submitted", "Report opens"];
       const lines = results.map((r) => [
         r.rank, r.student, r.email, r.batch, r.score, test.totalMarks, r.percentage, r.accuracy, r.correct, r.incorrect, r.skipped,
-        r.timeTaken != null ? round1(r.timeTaken / 60) : "", r.violations, r.status, new Date(r.submittedAt).toISOString(),
+        r.timeTaken != null ? round1(r.timeTaken / 60) : "", r.violations, r.status, new Date(r.submittedAt).toISOString(), r.reportOpens ?? "not sent",
       ].map(csvCell).join(","));
       const filename = `${test.title.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}-results.csv`;
       return new NextResponse([header.join(","), ...lines].join("\n"), {

@@ -80,13 +80,14 @@ export default function MentorStudentsPage() {
     }
   };
 
-  const dispatch = async (channel: "WHATSAPP" | "EMAIL") => {
+  const dispatch = async (audience: "PARENTS" | "STUDENT" | "BOTH") => {
     if (!attempt) return;
-    setBusy(channel);
+    setBusy(audience);
     try {
-      const res = await apiFetch<{ message: string; reportUrl: string }>("/api/mentor/dispatch-report", { method: "POST", json: { attemptId: attempt.id, channel } });
+      const res = await apiFetch<{ message: string; reportUrl: string; sent: number }>("/api/mentor/dispatch-report", { method: "POST", json: { attemptId: attempt.id, audience } });
       setReportUrl(res.reportUrl);
-      toast.success(res.message);
+      if (res.sent > 0) toast.success(res.message);
+      else toast.warning(res.message);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Couldn't send report");
     } finally {
@@ -197,10 +198,11 @@ export default function MentorStudentsPage() {
                 <div className="space-y-2 border-t border-white/[0.06] pt-4">
                   <p className="text-xs font-medium text-slate-300">Send report card</p>
                   <div className="flex flex-wrap gap-2">
-                    <Btn variant="success" loading={busy === "WHATSAPP"} onClick={() => dispatch("WHATSAPP")}><Send className="h-4 w-4" />Send via WhatsApp</Btn>
-                    <Btn variant="secondary" loading={busy === "EMAIL"} onClick={() => dispatch("EMAIL")}>Send via email</Btn>
+                    <Btn variant="success" loading={busy === "PARENTS"} disabled={!!busy} onClick={() => dispatch("PARENTS")}><Send className="h-4 w-4" />To parents</Btn>
+                    <Btn variant="secondary" loading={busy === "STUDENT"} disabled={!!busy} onClick={() => dispatch("STUDENT")}>To student</Btn>
+                    <Btn variant="secondary" loading={busy === "BOTH"} disabled={!!busy} onClick={() => dispatch("BOTH")}>To both</Btn>
                   </div>
-                  <p className="text-[11px] text-slate-500">No messaging provider is connected yet, so sends are simulated and recorded in the admin notification log.</p>
+                  <p className="text-[11px] text-slate-500">Sent by WhatsApp and/or SMS as set up in Admin → Messaging, with a short link to the report card. Delivery status appears in Notification Logs.</p>
                   {reportUrl && (
                     <div className="flex items-center gap-2 rounded-lg bg-black/30 p-2 text-xs">
                       <span className="flex-1 truncate font-mono text-slate-400">{reportUrl}</span>

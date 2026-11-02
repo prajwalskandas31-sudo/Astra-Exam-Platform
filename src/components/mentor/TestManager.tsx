@@ -22,6 +22,7 @@ interface Test {
   scheduledStart: string | null;
   createdAt: string;
   template: { name: string; examCategory: string } | null;
+  batches: { id: string; name: string }[];
   _count: { questions: number; attempts: number };
 }
 
@@ -54,6 +55,8 @@ export function TestManager() {
   const tests = useApi<Test[]>("/api/tests");
   const questions = useApi<Question[]>("/api/questions?status=PUBLISHED");
   const templates = useApi<Template[]>("/api/templates");
+  const batches = useApi<{ id: string; name: string }[]>("/api/batches");
+  const [batchIds, setBatchIds] = useState<string[]>([]);
   const [view, setView] = useState<"all" | "live" | "draft" | "archived">("all");
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(emptyForm());
@@ -90,12 +93,14 @@ export function TestManager() {
           scheduledStart: form.scheduledStart || null,
           scheduledEnd: form.scheduledEnd || null,
           questionIds: selected,
+          batchIds,
         },
       });
       toast.success(form.isPublished ? "Test published to students" : "Test saved as draft");
       setOpen(false);
       setForm(emptyForm());
       setSelected([]);
+      setBatchIds([]);
       tests.reload();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Couldn't create test");
@@ -164,7 +169,9 @@ export function TestManager() {
                   <tr key={t.id} className="hover:bg-white/[0.02]">
                     <td className="px-5 py-3">
                       <Link href={`${base}/${t.id}`} className="font-medium text-slate-100 hover:text-blue-300">{t.title}</Link>
-                      <p className="text-xs text-slate-500">{t.template?.name ?? "Custom"} · created {formatDate(t.createdAt)}</p>
+                      <p className="text-xs text-slate-500">
+                        {t.template?.name ?? "Custom"} · created {formatDate(t.createdAt)} · {t.batches?.length ? t.batches.map((b) => b.name).join(", ") : "all students"}
+                      </p>
                     </td>
                     <td className="px-3 py-3">
                       <div className="flex gap-1"><Badge tone={t.type === "MOCK" ? "violet" : "blue"}>{t.type.toLowerCase()}</Badge><Badge>{t.mode}</Badge></div>
@@ -238,9 +245,30 @@ export function TestManager() {
             <Field label="Opens at (optional)"><input type="datetime-local" value={form.scheduledStart} onChange={(e) => setForm({ ...form, scheduledStart: e.target.value })} className={inputClass} /></Field>
             <Field label="Closes at (optional)"><input type="datetime-local" value={form.scheduledEnd} onChange={(e) => setForm({ ...form, scheduledEnd: e.target.value })} className={inputClass} /></Field>
           </div>
+          {(batches.data ?? []).length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-slate-300">Assign to batches <span className="text-slate-500">(none selected = every student in the institute)</span></p>
+              <div className="flex flex-wrap gap-1.5">
+                {(batches.data ?? []).map((b) => {
+                  const on = batchIds.includes(b.id);
+                  return (
+                    <button
+                      key={b.id}
+                      type="button"
+                      aria-pressed={on}
+                      onClick={() => setBatchIds(on ? batchIds.filter((x) => x !== b.id) : [...batchIds, b.id])}
+                      className={cn("rounded-lg border px-2.5 py-1 text-xs font-medium transition", on ? "border-blue-500/60 bg-blue-500/15 text-blue-200" : "border-white/10 text-slate-400 hover:text-white")}
+                    >
+                      {b.name}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
           <label className="flex items-center gap-2 text-sm text-slate-300">
             <input type="checkbox" checked={form.isPublished} onChange={(e) => setForm({ ...form, isPublished: e.target.checked })} className="h-4 w-4 accent-blue-500" />
-            Publish to students immediately
+            Publish to students immediately (they&apos;re notified by WhatsApp/SMS if messaging is set up)
           </label>
 
           <div className="space-y-3">

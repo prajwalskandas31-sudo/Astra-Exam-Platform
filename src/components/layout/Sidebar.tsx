@@ -141,6 +141,7 @@ const ADMIN_NAV: NavGroup[] = [
   {
     title: "System",
     items: [
+      { label: "WhatsApp & SMS", href: "/admin/messaging", icon: MessageSquare },
       { label: "Notification Logs", href: "/admin/notifications", icon: Send },
       { label: "Settings", href: "/admin/settings", icon: Settings },
     ],

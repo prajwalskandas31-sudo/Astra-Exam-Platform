@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
-import { Plus, Search, Trash2, Users } from "lucide-react";
+import { KeyRound, Plus, Search, Trash2, Upload, Users } from "lucide-react";
+import { UserImportModal } from "@/components/admin/UserImport";
 import { Badge, Btn, Card, EmptyState, ErrorState, Field, Modal, PageHeader, PageLoader, Tabs, formatDate, inputClass } from "@/components/ui/kit";
 import { apiFetch, useApi } from "@/lib/fetcher";
 import { ROLE_LABELS, type AppRole } from "@/lib/roles";
@@ -45,6 +46,17 @@ export default function AdminUsersPage() {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [tempPassword, setTempPassword] = useState<{ email: string; temporaryPassword: string } | null>(null);
+
+  const resetPassword = async (u: UserRow) => {
+    if (!window.confirm(`Reset ${u.name}'s password? They will be signed out and need the new temporary password to sign in.`)) return;
+    try {
+      setTempPassword(await apiFetch<{ email: string; temporaryPassword: string }>(`/api/users/${u.id}/reset-password`, { method: "POST" }));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't reset password");
+    }
+  };
 
   const users = data ?? [];
   const visible = users.filter((u) => matchesRole(u, filter) && (!query || `${u.name} ${u.email}`.toLowerCase().includes(query.toLowerCase())));
@@ -96,7 +108,21 @@ export default function AdminUsersPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Users" description="Create accounts, change roles, assign batches and manage access." actions={<Btn onClick={() => setOpen(true)}><Plus className="h-4 w-4" />Add user</Btn>} />
+      <PageHeader title="Users" description="Create accounts, change roles, assign batches and manage access." actions={<><Btn variant="secondary" onClick={() => setImportOpen(true)}><Upload className="h-4 w-4" />Import CSV</Btn><Btn onClick={() => setOpen(true)}><Plus className="h-4 w-4" />Add user</Btn></>} />
+
+      <UserImportModal open={importOpen} onClose={() => setImportOpen(false)} onImported={reload} />
+      <Modal open={!!tempPassword} onClose={() => setTempPassword(null)} title="Temporary password" description="Share it with the user privately. It won't be shown again." size="sm"
+        footer={<Btn onClick={() => setTempPassword(null)}>Done</Btn>}>
+        {tempPassword && (
+          <div className="space-y-2 text-sm">
+            <p className="text-slate-400">{tempPassword.email}</p>
+            <div className="flex items-center gap-2 rounded-lg bg-black/30 p-3">
+              <code className="flex-1 font-mono text-base text-white">{tempPassword.temporaryPassword}</code>
+              <Btn size="sm" variant="secondary" onClick={() => navigator.clipboard.writeText(tempPassword.temporaryPassword).then(() => toast.success("Copied"))}>Copy</Btn>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <Tabs<RoleFilter> value={filter} onChange={setFilter} items={[
@@ -161,6 +187,7 @@ export default function AdminUsersPage() {
                         )}
                       </td>
                       <td className="px-3 py-3 text-right">
+                        {!self && <button onClick={() => resetPassword(u)} className="rounded-lg p-2 text-slate-500 hover:bg-white/5 hover:text-white" aria-label={`Reset password for ${u.name}`} title="Reset password"><KeyRound className="h-4 w-4" /></button>}
                         {!self && <button onClick={() => remove(u)} className="rounded-lg p-2 text-slate-500 hover:bg-rose-500/10 hover:text-rose-400" aria-label={`Delete ${u.name}`}><Trash2 className="h-4 w-4" /></button>}
                       </td>
                     </tr>
@@ -177,7 +204,7 @@ export default function AdminUsersPage() {
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Full name"><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className={inputClass} /></Field>
           <Field label="Email"><input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className={inputClass} /></Field>
-          <Field label="Mobile (optional)"><input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className={inputClass} /></Field>
+          <Field label="Mobile (optional)" hint="Needed for WhatsApp/SMS alerts and password resets"><input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className={inputClass} /></Field>
           <Field label="Temporary password" hint="At least 8 characters"><input value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className={inputClass} /></Field>
           <Field label="Role">
             <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className={inputClass}>

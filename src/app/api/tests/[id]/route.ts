@@ -1,7 +1,9 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireRole, tenantWhere } from "@/lib/api";
 import { STAFF_ROLES } from "@/lib/roles";
+import { appBaseUrl } from "@/lib/reportLinks";
+import { sendTestAssigned } from "@/lib/messaging/automations";
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -32,7 +34,19 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       data.status = body.isPublished ? "ACTIVE" : "DRAFT";
     }
 
+    if (Array.isArray(body.batchIds)) {
+      const batchIds = [...new Set(body.batchIds.filter((b: unknown): b is string => typeof b === "string"))] as string[];
+      const found = await prisma.batch.count({ where: { id: { in: batchIds }, ...tenantWhere(session) } });
+      if (found !== batchIds.length) return NextResponse.json({ error: "Some selected batches were not found" }, { status: 400 });
+      data.batches = { set: batchIds.map((b) => ({ id: b })) };
+    }
+
     const test = await prisma.test.update({ where: { id }, data });
+    // Announce the test only when it goes from hidden to published
+    if (!existing.isPublished && test.isPublished) {
+      const baseUrl = appBaseUrl(request);
+      after(() => sendTestAssigned(test.id, baseUrl).catch((e) => console.error("[TEST_ASSIGNED_ALERT]", e)));
+    }
     return NextResponse.json(test);
   } catch (error) {
     console.error("[TEST_PATCH]", error);

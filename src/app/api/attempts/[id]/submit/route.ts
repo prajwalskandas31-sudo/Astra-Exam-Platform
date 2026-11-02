@@ -1,8 +1,8 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/api";
-import { NotificationService } from "@/lib/notifications";
-import { generateReportToken } from "@/lib/reportTokens";
+import { appBaseUrl } from "@/lib/reportLinks";
+import { sendResult } from "@/lib/messaging/automations";
 import { gradeAttempt } from "@/lib/scoring";
 import { attemptQuestionFilter, isFinished, serverTimeRemaining } from "@/lib/attempts";
 import { logStudy, queueForReview } from "@/lib/study";
@@ -19,11 +19,6 @@ export async function POST(
     const attempt = await prisma.attempt.findUnique({
       where: { id },
       include: {
-        user: {
-          include: {
-            studentLinks: { include: { parent: true } }
-          }
-        },
         test: {
           include: {
             questions: { include: { question: true } }
@@ -108,30 +103,10 @@ export async function POST(
       logStudy(attempt.userId, { questions: result.attemptedCount }),
     ]).catch((e) => console.error("[SUBMIT_STUDY_LOG]", e));
 
-    // WhatsApp dispatch (simulated provider) to the student and linked parents
-    const reportToken = generateReportToken(attempt.id, attempt.userId);
-    const domain = process.env.NEXTAUTH_URL || new URL(request.url).origin;
-    const reportUrl = `${domain}/report/${reportToken}`;
-    const recipients = [
-      attempt.user.phone ? { phone: attempt.user.phone, name: attempt.user.name } : null,
-      ...attempt.user.studentLinks.map((l) => (l.parent.phone ? { phone: l.parent.phone, name: l.parent.name } : null))
-    ].filter((r): r is { phone: string; name: string } => !!r);
-
-    await Promise.all(
-      recipients.map((r) =>
-        NotificationService.sendNotification({
-          recipientPhone: r.phone,
-          recipientName: r.name,
-          type: "RESULT_NOTIFICATION",
-          testTitle: attempt.test.title,
-          score: result.score,
-          accuracy: result.accuracy,
-          rank,
-          reportUrl,
-          organizationId: attempt.user.organizationId
-        }).catch(console.error)
-      )
-    );
+    // Result alert with a short report link to the student and linked parents (WhatsApp/SMS),
+    // sent after the response so the student sees their result immediately
+    const baseUrl = appBaseUrl(request);
+    after(() => sendResult(attempt.id, baseUrl).catch((e) => console.error("[SUBMIT_RESULT_ALERT]", e)));
 
     return NextResponse.json(updatedAttempt);
   } catch (error) {
