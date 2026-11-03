@@ -55,6 +55,17 @@ npx tsx prisma/create-admin.ts --institute "Apex Coaching" --name "Asha Rao" --e
 
 Prints a one-time password. Add `--super` for a platform super admin.
 
+### Demo institute for sales demos
+
+```bash
+npx tsx prisma/seed-demo.ts   # with DATABASE_URL / DATABASE_URL_UNPOOLED pointing at the target database
+```
+
+Creates "Astra Demo Academy" in its own tenant: admin, faculty, mentor, parent and students on the reserved
+`astra-demo.test` domain, the sample question bank and tests, graded attempts with a spread of scores, study history
+and a review queue. No phone numbers (so no real WhatsApp/SMS) and no super admin. Prints fresh random passwords on
+every run; re-run to reset the demo.
+
 ### Demo accounts (dev database only, password `password123`)
 
 | Role | Email |
