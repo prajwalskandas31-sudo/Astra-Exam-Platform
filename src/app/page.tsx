@@ -230,7 +230,12 @@ export default function Home() {
                 Sign In
               </Button>
             </Link>
-            <Link href="/login">
+            <Link href="/register-institute" className="hidden md:block">
+              <Button variant="ghost" className="text-slate-300 hover:text-white hover:bg-white/10 transition-all font-bold text-sm px-4">
+                For Institutes
+              </Button>
+            </Link>
+            <Link href="/login?mode=signup">
               <Button className="bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-500 hover:from-blue-500 hover:to-indigo-500 text-white shadow-[0_0_25px_rgba(37,99,235,0.4)] hover:shadow-[0_0_35px_rgba(37,99,235,0.6)] transition-all font-bold rounded-xl px-5 h-10 text-sm">
                 Register Free
               </Button>

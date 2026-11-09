@@ -1,6 +1,7 @@
 import { NextResponse, after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireRole, tenantWhere } from "@/lib/api";
+import { audit } from "@/lib/audit";
 import { STAFF_ROLES } from "@/lib/roles";
 import { appBaseUrl } from "@/lib/reportLinks";
 import { sendTestAssigned } from "@/lib/messaging/automations";
@@ -47,6 +48,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       const baseUrl = appBaseUrl(request);
       after(() => sendTestAssigned(test.id, baseUrl).catch((e) => console.error("[TEST_ASSIGNED_ALERT]", e)));
     }
+    await audit(session, { action: !existing.isPublished && test.isPublished ? "test.publish" : "test.update", targetType: "Test", targetId: id, summary: `${!existing.isPublished && test.isPublished ? "Published" : "Edited"} "${test.title}"` }, request);
     return NextResponse.json(test);
   } catch (error) {
     console.error("[TEST_PATCH]", error);
@@ -69,10 +71,12 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
     if (existing._count.attempts > 0) {
       // Preserve student results: archive instead of deleting
       await prisma.test.update({ where: { id }, data: { isPublished: false, status: "ARCHIVED" } });
+      await audit(session, { action: "test.archive", targetType: "Test", targetId: id, summary: `Archived "${existing.title}" (${existing._count.attempts} results kept)` }, _request);
       return NextResponse.json({ success: true, archived: true });
     }
 
     await prisma.test.delete({ where: { id } });
+    await audit(session, { action: "test.delete", targetType: "Test", targetId: id, summary: `Deleted "${existing.title}"` }, _request);
     return NextResponse.json({ success: true, archived: false });
   } catch (error) {
     console.error("[TEST_DELETE]", error);

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireRole, tenantWhere } from "@/lib/api";
+import { audit } from "@/lib/audit";
 import { STAFF_ROLES, isAdmin } from "@/lib/roles";
 
 export async function PUT(
@@ -31,6 +32,7 @@ export async function PUT(
       select: { id: true, name: true, email: true, role: true, status: true }
     });
 
+    await audit(session, { action: status === "APPROVED" ? "user.approve" : "user.reject", targetType: "User", targetId: id, summary: `${status === "APPROVED" ? "Approved" : "Rejected"} ${updatedUser.email}` }, request);
     return NextResponse.json(updatedUser);
   } catch (error) {
     console.error("[USER_APPROVE_PUT]", error);

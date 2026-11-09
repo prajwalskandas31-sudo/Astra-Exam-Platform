@@ -1,6 +1,7 @@
 import { NextResponse, after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { jsonError, requireRole, tenantOrGlobalWhere } from "@/lib/api";
+import { audit } from "@/lib/audit";
 import { STAFF_ROLES } from "@/lib/roles";
 import { appBaseUrl } from "@/lib/reportLinks";
 import { sendResult, type Audience } from "@/lib/messaging/automations";
@@ -41,6 +42,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       }
     });
 
+    await audit(session, { action: "test.dispatchReports", targetType: "Test", targetId: id, summary: `Sent ${ids.length} report cards` }, request);
     return NextResponse.json({ queued: ids.length, message: `Sending ${ids.length} report card${ids.length === 1 ? "" : "s"} — check Notification Logs for delivery` });
   } catch (error) {
     console.error("[DISPATCH_REPORTS_POST]", error);

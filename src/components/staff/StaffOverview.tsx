@@ -5,6 +5,8 @@ import { Activity, AlertTriangle, BookOpen, ClipboardList, GraduationCap, Inbox,
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Badge, Btn, Card, CardHeader, EmptyState, ErrorState, PageLoader, ProgressBar, StatCard, formatDate, scoreTone } from "@/components/ui/kit";
 import { useApi } from "@/lib/fetcher";
+import { SetupChecklist, type SetupStep } from "@/components/admin/SetupChecklist";
+import { InviteStudentsCard } from "@/components/admin/InviteStudentsCard";
 
 export interface Overview {
   counts: {
@@ -20,6 +22,7 @@ export interface Overview {
   topTests: { id: string; title: string; attempts: number; questions: number; isPublished: boolean }[];
   recentAttempts: { id: string; student: string; test: string; percentage: number; date: string }[];
   recentNotifications: { id: string; recipientPhone: string; type: string; status: string; createdAt: string }[];
+  setup: SetupStep[] | null;
 }
 
 export function useOverview() {
@@ -93,6 +96,8 @@ export function StaffOverview({ basePath, isAdmin }: { basePath: "/mentor" | "/a
 
   return (
     <div className="space-y-6">
+      {isAdmin && data.setup && <SetupChecklist steps={data.setup} />}
+      <InviteStudentsCard isAdmin={isAdmin} />
       {pending > 0 && (
         <Card className="flex flex-col gap-3 border-amber-500/30 bg-amber-500/5 p-4 sm:flex-row sm:items-center sm:justify-between">
           <p className="flex items-center gap-2 text-sm text-amber-200">

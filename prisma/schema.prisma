@@ -69,6 +69,7 @@ model Organization {
   contactPhone      String?
   academicYear      String?        @default("2026-2027")
   customDomain      String?        @unique
+  joinCode          String?        @unique // students and parents sign up with this code or the /join/<code> link
   whatsappConfig    String? // JSON configuration for notification provider
   offeredCategories String? // JSON Array of strings (e.g. '["AFCAT", "GATE"]')
   users             User[]
@@ -479,4 +480,22 @@ model RateLimit {
   resetAt DateTime
 
   @@index([resetAt])
+}
+
+// Who did what, for accountability and DPDP/compliance questions. Written by staff and admin actions.
+model AuditLog {
+  id             String   @id @default(cuid())
+  organizationId String?
+  actorId        String?
+  actorName      String?
+  actorRole      String?
+  action         String // e.g. "user.delete", "test.publish", "organization.update"
+  targetType     String? // e.g. "User", "Test"
+  targetId       String?
+  summary        String? // human-readable one-liner shown in the log
+  ip             String?
+  createdAt      DateTime @default(now())
+
+  @@index([organizationId, createdAt])
+  @@index([actorId])
 }

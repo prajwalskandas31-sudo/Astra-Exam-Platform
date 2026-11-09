@@ -44,9 +44,28 @@ new folder in `prisma/migrations`. Every deploy runs `prisma migrate deploy` aga
 | `CRON_SECRET` | production | protects the weekly digest cron endpoint |
 | `GEMINI_API_KEY` | optional | AI extraction of questions from PDFs |
 | `LOGIN_IP_LIMIT` | optional | sign-ins allowed per IP per 15 minutes (default 2000) |
+| `NEXT_PUBLIC_SHOW_DEMO_LOGINS` | development / preview only | `true` shows the quick-fill demo login buttons; leave unset in production |
 
 WhatsApp/SMS credentials are not environment variables: each institute enters its own in Admin → WhatsApp & SMS
 (stored encrypted).
+
+### How institutes and students join
+
+- **Institutes sign themselves up** at `/register-institute` (also linked from the landing page and login page).
+  This creates the institute and its first admin, who lands on a setup checklist: branding → batches →
+  students → questions → first test → WhatsApp/SMS → first result.
+- **Students and parents join with the institute's link** (`/join/<code>`), shown on the admin and mentor
+  dashboards with Copy and *Share on WhatsApp* buttons. Admins can issue a new link, which disables the old one.
+  Signing up without a code only works when the deployment has exactly one real institute.
+- Admins can still bulk-import students from CSV (Admin → Users).
+
+### Compliance
+
+- **Audit Log** (Admin → Audit Log): who created, changed or deleted users, tests, questions, batches,
+  branding and messaging settings, with time and IP.
+- **DPDP Act rights** (Settings → Your data & privacy): every user can download all their data as JSON and
+  delete their account (password required; an institute's last admin can't delete themselves).
+- Backups: Neon keeps point-in-time restore history (check the retention window on your plan before launch).
 
 ### First admin in a new database
 

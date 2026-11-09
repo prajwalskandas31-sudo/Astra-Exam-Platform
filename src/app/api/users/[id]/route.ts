@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireRole, tenantWhere } from "@/lib/api";
+import { audit } from "@/lib/audit";
 import { ADMIN_ROLES, ROLES } from "@/lib/roles";
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -48,6 +49,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       data,
       select: { id: true, name: true, email: true, phone: true, role: true, status: true, batchId: true }
     });
+    await audit(session, { action: "user.update", targetType: "User", targetId: id, summary: `Updated ${target.email}: ${Object.keys(data).join(", ")}` }, request);
     return NextResponse.json(user);
   } catch (error) {
     console.error("[USER_PATCH]", error);
@@ -71,6 +73,7 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
     }
 
     await prisma.user.delete({ where: { id } });
+    await audit(session, { action: "user.delete", targetType: "User", targetId: id, summary: `Deleted ${target.role.toLowerCase()} ${target.email}` }, _request);
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("[USER_DELETE]", error);

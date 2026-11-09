@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/api";
+import { audit } from "@/lib/audit";
 import { STAFF_ROLES } from "@/lib/roles";
 import { normalizeQuestion } from "@/lib/questions";
 
@@ -41,6 +42,7 @@ export async function POST(request: Request) {
 
     const created = await prisma.$transaction(valid.map((data) => prisma.question.create({ data })));
 
+    await audit(session, { action: "question.import", targetType: "Question", summary: `Imported ${created.length} questions${errors.length ? `, skipped ${errors.length}` : ""}` }, request);
     return NextResponse.json({ success: true, count: created.length, skipped: errors.length, details: errors.slice(0, 20) });
   } catch (error) {
     console.error("[QUESTIONS_BULK_POST]", error);

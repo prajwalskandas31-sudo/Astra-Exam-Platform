@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireRole, tenantOrGlobalWhere } from "@/lib/api";
+import { audit } from "@/lib/audit";
 import { STAFF_ROLES, isAdmin } from "@/lib/roles";
 
 const RESOURCE_CATEGORIES = ["Notes", "Formula Sheets", "Previous Papers", "Videos", "Syllabus"] as const;
@@ -55,6 +56,7 @@ export async function POST(request: Request) {
       },
       include: { author: { select: { id: true, name: true } } }
     });
+    await audit(session, { action: "resource.create", targetType: "Resource", targetId: resource.id, summary: `Shared "${resource.title}"` }, request);
     return NextResponse.json(resource);
   } catch (error) {
     console.error("[RESOURCES_POST]", error);
@@ -74,6 +76,7 @@ export async function DELETE(request: Request) {
     if (!allowed) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     await prisma.resource.delete({ where: { id: existing.id } });
+    await audit(session, { action: "resource.delete", targetType: "Resource", targetId: existing.id, summary: `Removed "${existing.title}"` }, request);
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("[RESOURCES_DELETE]", error);
