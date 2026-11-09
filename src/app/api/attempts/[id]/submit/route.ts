@@ -4,7 +4,7 @@ import { requireRole } from "@/lib/api";
 import { appBaseUrl } from "@/lib/reportLinks";
 import { sendResult } from "@/lib/messaging/automations";
 import { gradeAttempt } from "@/lib/scoring";
-import { acceptsAnswers, attemptQuestionFilter, parseIncomingAnswers, saveAnswers, serverTimeRemaining } from "@/lib/attempts";
+import { acceptsAnswers, attemptQuestionFilter, parseIncomingAnswers, saveAnswers, scheduleRerank, serverTimeRemaining } from "@/lib/attempts";
 import { logStudy, queueForReview } from "@/lib/study";
 
 const OPEN_STATUSES = ["IN_PROGRESS", "PAUSED"] as const;
@@ -143,6 +143,8 @@ export async function POST(
     // sent after the response so the student sees their result immediately
     const baseUrl = appBaseUrl(request);
     after(() => sendResult(attempt.id, baseUrl).catch((e) => console.error("[SUBMIT_RESULT_ALERT]", e)));
+    // Earlier finishers' ranks shift as better scores come in
+    if (!attempt.isRetry) after(() => scheduleRerank(attempt.testId).catch((e) => console.error("[SUBMIT_RERANK]", e)));
 
     return NextResponse.json(updated);
   } catch (error) {

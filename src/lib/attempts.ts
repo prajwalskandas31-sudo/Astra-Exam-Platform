@@ -1,6 +1,7 @@
 import type { Session } from "next-auth";
 import { prisma } from "./prisma";
 import { isStaff } from "./roles";
+import { rateLimit } from "./rateLimit";
 
 export const FINISHED_STATUSES = ["COMPLETED", "AUTO_SUBMITTED"] as const;
 
@@ -96,6 +97,35 @@ export async function saveAnswers(
       "status"      = EXCLUDED."status",
       "timeSpent"   = EXCLUDED."timeSpent",
       "updatedAt"   = NOW()`;
+}
+
+const RERANK_WINDOW_SECONDS = 10;
+
+/**
+ * Keep every result's stored rank and percentile correct as more students submit.
+ * Ranks are stored on each attempt at submit time, so the first finisher would otherwise stay
+ * "#1" forever. Recomputing everyone on every submit would be N² writes during a big exam, so:
+ * the first submit in each 10 s window (claimed through the shared RateLimit table, so one
+ * server instance does it) waits for the window to close and then re-ranks the whole test in a
+ * single statement, covering every submit in that window. Call it from `after()`.
+ */
+export async function scheduleRerank(testId: string) {
+  const claim = await rateLimit(`rerank:${testId}`, 1, RERANK_WINDOW_SECONDS);
+  if (!claim.ok) return; // another submit in this window already scheduled it
+  await new Promise((r) => setTimeout(r, RERANK_WINDOW_SECONDS * 1000));
+  await prisma.$executeRaw`
+    UPDATE "Attempt" AS a SET "rank" = r.rnk, "percentile" = r.pct
+    FROM (
+      SELECT "id",
+             RANK() OVER (ORDER BY COALESCE("score", 0) DESC)::int AS rnk,
+             CASE WHEN COUNT(*) OVER () > 1
+                  THEN ROUND(((COUNT(*) OVER () - RANK() OVER (ORDER BY COALESCE("score", 0) DESC))::numeric
+                              / (COUNT(*) OVER () - 1)) * 100, 1)::float8
+                  ELSE 100 END AS pct
+      FROM "Attempt"
+      WHERE "testId" = ${testId} AND "isRetry" = false AND "status" IN ('COMPLETED', 'AUTO_SUBMITTED')
+    ) AS r
+    WHERE a."id" = r."id" AND (a."rank" IS DISTINCT FROM r.rnk OR a."percentile" IS DISTINCT FROM r.pct)`;
 }
 
 /** Who may view an attempt: its owner, staff of the same institute, or a linked parent. */

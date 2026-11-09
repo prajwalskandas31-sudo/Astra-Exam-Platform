@@ -27,8 +27,13 @@ const peerCache = new Map<string, { at: number; data: ReturnType<typeof loadPeer
  * tenants and peers must never leak between them) and per-question stats aggregated in Postgres.
  * Cached for 30 s per instance, so a whole batch opening results together costs one load.
  */
-function getPeerData(testId: string, organizationId: string | null) {
-  const key = `${testId}:${organizationId ?? ""}`;
+async function getPeerData(testId: string, organizationId: string | null) {
+  // The cache key includes how many results exist (one cheap indexed count), so the moment
+  // another student submits, everyone's comparison is recomputed instead of going stale
+  const finishedCount = await prisma.attempt.count({
+    where: { testId, isRetry: false, status: { in: ["COMPLETED", "AUTO_SUBMITTED"] }, user: { organizationId } },
+  });
+  const key = `${testId}:${organizationId ?? ""}:${finishedCount}`;
   const now = Date.now();
   const hit = peerCache.get(key);
   if (hit && now - hit.at < PEER_TTL_MS) return hit.data;
