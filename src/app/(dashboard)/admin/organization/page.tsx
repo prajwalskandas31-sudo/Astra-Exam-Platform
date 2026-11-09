@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Building2, Palette } from "lucide-react";
+import { Building2, MonitorCheck, Palette } from "lucide-react";
 import { Badge, Btn, Card, CardHeader, ErrorState, Field, PageHeader, PageLoader, inputClass } from "@/components/ui/kit";
 import { apiFetch, useApi } from "@/lib/fetcher";
 
@@ -19,6 +19,8 @@ interface Org {
   customDomain: string | null;
   offeredCategories: string[];
   whatsappProvider: string | null;
+  examCentreEnabled: boolean;
+  offlineExamsEnabled: boolean;
 }
 
 const CATEGORIES = ["PLAB", "NEET", "JEE", "GATE", "AFCAT", "COMEDK", "SSC CGL", "CUSTOM"];
@@ -36,7 +38,7 @@ export default function OrganizationPage() {
     if (!form) return;
     setSaving(true);
     try {
-      const { id: _id, slug: _slug, whatsappProvider: _w, ...payload } = form;
+      const { id: _id, slug: _slug, whatsappProvider: _w, examCentreEnabled: _c, offlineExamsEnabled: _o, ...payload } = form;
       await apiFetch("/api/organization", {
         method: "PATCH",
         json: Object.fromEntries(Object.entries(payload).map(([k, v]) => [k, v ?? ""])),
@@ -47,6 +49,21 @@ export default function OrganizationPage() {
       toast.error(e instanceof Error ? e.message : "Couldn't save");
     } finally {
       setSaving(false);
+    }
+  };
+
+  // Exam modes save on their own, the moment they are switched
+  const toggleMode = async (key: "examCentreEnabled" | "offlineExamsEnabled", value: boolean) => {
+    try {
+      const updated = await apiFetch<Org>("/api/organization", { method: "PATCH", json: { [key]: value } });
+      setForm((f) => (f ? { ...f, examCentreEnabled: updated.examCentreEnabled, offlineExamsEnabled: updated.offlineExamsEnabled } : f));
+      toast.success(
+        key === "examCentreEnabled"
+          ? value ? "Exam Centre mode is on — tick “Run in Exam Centre mode” when creating a test" : "Exam Centre mode is off"
+          : value ? "Offline exams are on — tick “Allow offline” on a centre test" : "Offline exams are off"
+      );
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't update");
     }
   };
 
@@ -116,6 +133,24 @@ export default function OrganizationPage() {
               </div>
             </div>
           </Card>
+          <Card>
+            <CardHeader title="Exam modes" icon={MonitorCheck} />
+            <div className="space-y-4 p-5">
+              <ModeSwitch
+                label="Exam Centre mode"
+                description="For exams in your own labs or halls: an invigilator start code, seat plans where neighbours get different question sets, and a live room view. Students are identified by their student ID, on lab computers or their own laptops."
+                checked={form.examCentreEnabled}
+                onChange={(v) => toggleMode("examCentreEnabled", v)}
+              />
+              <ModeSwitch
+                label="Offline exams"
+                description="Computers download the encrypted paper before the exam and can finish it with no internet. Answers upload automatically afterwards (or by USB) and are graded in a queue, so a whole centre reconnecting at once can't overload the server."
+                checked={form.offlineExamsEnabled}
+                onChange={(v) => toggleMode("offlineExamsEnabled", v)}
+              />
+              <p className="text-xs text-slate-500">Question shuffling works for every test, whether or not these are on.</p>
+            </div>
+          </Card>
           <Card className="p-5">
             <p className="text-sm font-semibold text-white">WhatsApp notifications</p>
             <p className="mt-1 text-xs text-slate-400">Provider: {form.whatsappProvider ? <Badge>{form.whatsappProvider}</Badge> : "not configured"}</p>
@@ -123,6 +158,26 @@ export default function OrganizationPage() {
           </Card>
         </div>
       </div>
+    </div>
+  );
+}
+
+function ModeSwitch({ label, description, checked, onChange }: { label: string; description: string; checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <div className="flex items-start justify-between gap-4">
+      <div>
+        <p className="text-sm font-medium text-white">{label}</p>
+        <p className="mt-0.5 text-xs leading-relaxed text-slate-400">{description}</p>
+      </div>
+      <button
+        role="switch"
+        aria-checked={checked}
+        aria-label={label}
+        onClick={() => onChange(!checked)}
+        className={`relative mt-0.5 h-6 w-11 shrink-0 rounded-full transition ${checked ? "bg-emerald-500" : "bg-slate-700"}`}
+      >
+        <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all ${checked ? "left-[22px]" : "left-0.5"}`} />
+      </button>
     </div>
   );
 }

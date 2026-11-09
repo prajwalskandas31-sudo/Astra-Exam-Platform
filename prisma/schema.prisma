@@ -59,57 +59,62 @@ enum AttemptStatus {
 }
 
 model Organization {
-  id                String         @id @default(cuid())
-  name              String
-  slug              String         @unique
-  logoUrl           String?
-  primaryColor      String?        @default("#3b82f6")
-  secondaryColor    String?        @default("#1e40af")
-  contactEmail      String?
-  contactPhone      String?
-  academicYear      String?        @default("2026-2027")
-  customDomain      String?        @unique
-  joinCode          String?        @unique // students and parents sign up with this code or the /join/<code> link
-  whatsappConfig    String? // JSON configuration for notification provider
-  offeredCategories String? // JSON Array of strings (e.g. '["AFCAT", "GATE"]')
-  users             User[]
-  batches           Batch[]
-  tests             Test[]
-  questions         Question[]
-  examTemplates     ExamTemplate[]
-  announcements     Announcement[]
-  resources         Resource[]
-  createdAt         DateTime       @default(now())
-  updatedAt         DateTime       @updatedAt
+  id                  String         @id @default(cuid())
+  name                String
+  slug                String         @unique
+  logoUrl             String?
+  primaryColor        String?        @default("#3b82f6")
+  secondaryColor      String?        @default("#1e40af")
+  contactEmail        String?
+  contactPhone        String?
+  academicYear        String?        @default("2026-2027")
+  customDomain        String?        @unique
+  joinCode            String?        @unique // students and parents sign up with this code or the /join/<code> link
+  whatsappConfig      String? // JSON configuration for notification provider
+  offeredCategories   String? // JSON Array of strings (e.g. '["AFCAT", "GATE"]')
+  examCentreEnabled   Boolean        @default(false) // opt-in: seat plans, start codes and the invigilator console
+  offlineExamsEnabled Boolean        @default(false) // opt-in: papers pre-downloaded to devices, answers uploaded after
+  users               User[]
+  batches             Batch[]
+  tests               Test[]
+  questions           Question[]
+  examTemplates       ExamTemplate[]
+  announcements       Announcement[]
+  resources           Resource[]
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
 }
 
 model User {
-  id              String           @id @default(cuid())
-  email           String           @unique
-  password        String
-  name            String
-  phone           String?
-  role            Role             @default(STUDENT)
-  status          Status           @default(PENDING)
-  organizationId  String?
-  organization    Organization?    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  batchId         String?
-  batch           Batch?           @relation(fields: [batchId], references: [id], onDelete: SetNull)
-  attempts        Attempt[]
-  requests        TestRequest[]
-  sessionId       String?
-  examTracks      String? // JSON array of exam categories the student is preparing for
-  targetExamDate  DateTime? // student's exam day, drives the dashboard countdown
-  dailyGoal       Int              @default(30) // questions per day
-  notifyWhatsapp  Boolean          @default(true) // opt-out of WhatsApp messages
-  notifySms       Boolean          @default(true) // opt-out of SMS messages
-  passwordResets  PasswordReset[]
-  bookmarks       Bookmark[]
-  reviewItems     ReviewItem[]
-  studyLogs       StudyLog[]
-  questionReports QuestionReport[]
-  announcements   Announcement[]
-  resources       Resource[]
+  id                 String              @id @default(cuid())
+  email              String              @unique
+  password           String
+  name               String
+  phone              String?
+  studentCode        String? // the institute's own student / roll ID (upper-case); unique within the institute
+  role               Role                @default(STUDENT)
+  status             Status              @default(PENDING)
+  organizationId     String?
+  organization       Organization?       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  batchId            String?
+  batch              Batch?              @relation(fields: [batchId], references: [id], onDelete: SetNull)
+  attempts           Attempt[]
+  requests           TestRequest[]
+  sessionId          String?
+  examTracks         String? // JSON array of exam categories the student is preparing for
+  targetExamDate     DateTime? // student's exam day, drives the dashboard countdown
+  dailyGoal          Int                 @default(30) // questions per day
+  notifyWhatsapp     Boolean             @default(true) // opt-out of WhatsApp messages
+  notifySms          Boolean             @default(true) // opt-out of SMS messages
+  passwordResets     PasswordReset[]
+  bookmarks          Bookmark[]
+  reviewItems        ReviewItem[]
+  studyLogs          StudyLog[]
+  questionReports    QuestionReport[]
+  announcements      Announcement[]
+  resources          Resource[]
+  examSeats          ExamSeat[]
+  pendingSubmissions PendingSubmission[]
 
   // Parent - Student Linkage
   parentLinks  ParentStudentLink[] @relation("ParentLink")
@@ -118,8 +123,10 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@unique([organizationId, studentCode])
   @@index([organizationId, role])
   @@index([batchId])
+  @@index([studentCode])
 }
 
 model ParentStudentLink {
@@ -202,27 +209,38 @@ model Question {
 }
 
 model Test {
-  id             String         @id @default(cuid())
-  title          String
-  description    String?
-  duration       Int // in minutes
-  totalMarks     Int
-  type           TestType       @default(PRACTICE)
-  mode           ExamMode       @default(CBT)
-  status         TestStatus     @default(DRAFT)
-  isPublished    Boolean        @default(false)
-  scheduledStart DateTime?
-  scheduledEnd   DateTime?
-  templateId     String?
-  template       ExamTemplate?  @relation(fields: [templateId], references: [id], onDelete: SetNull)
-  ownerId        String? // set for a student's private custom quiz; hidden from every listing
-  organizationId String?
-  organization   Organization?  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  batches        Batch[]        @relation("BatchTests")
-  questions      TestQuestion[]
-  attempts       Attempt[]
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
+  id                 String              @id @default(cuid())
+  title              String
+  description        String?
+  duration           Int // in minutes
+  totalMarks         Int
+  type               TestType            @default(PRACTICE)
+  mode               ExamMode            @default(CBT)
+  status             TestStatus          @default(DRAFT)
+  isPublished        Boolean             @default(false)
+  scheduledStart     DateTime?
+  scheduledEnd       DateTime?
+  templateId         String?
+  template           ExamTemplate?       @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  ownerId            String? // set for a student's private custom quiz; hidden from every listing
+  // Anti-copying: OFF, PER_STUDENT (every student gets their own order) or SETS (setCount named sets A, B, C...)
+  shuffleMode        String              @default("OFF")
+  shuffleOptions     Boolean             @default(true) // also shuffle the options inside each question
+  setCount           Int                 @default(4)
+  // Exam Centre mode (only when the institute turned it on)
+  centreExam         Boolean             @default(false) // students need the invigilator's start code to begin
+  startCode          String? // staff-only until the invigilator announces it; also unlocks offline papers
+  allowOffline       Boolean             @default(false) // devices may pre-download the encrypted paper and sit it offline
+  centreRooms        String? // JSON [{ name, rows, cols }]
+  seats              ExamSeat[]
+  pendingSubmissions PendingSubmission[]
+  organizationId     String?
+  organization       Organization?       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  batches            Batch[]             @relation("BatchTests")
+  questions          TestQuestion[]
+  attempts           Attempt[]
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
 
   @@index([organizationId, isPublished])
   @@index([ownerId])
@@ -271,6 +289,11 @@ model Attempt {
   violations       Violation[]
   mentorComment    String?
   isRetry          Boolean       @default(false)
+  paperSeed        String? // drives this attempt's question/option order; null = original order
+  setCode          String? // "A", "B"... when the test uses named sets
+  deviceId         String? // random ID the exam device generated, shown to invigilators
+  lastSeenAt       DateTime? // last autosave, for the invigilator's live view
+  offline          Boolean       @default(false) // sat offline and uploaded afterwards
   parentAttemptId  String?
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
@@ -498,4 +521,51 @@ model AuditLog {
 
   @@index([organizationId, createdAt])
   @@index([actorId])
+}
+
+// A student's seat for one Exam Centre test. Neighbouring seats get different sets.
+model ExamSeat {
+  id           String    @id @default(cuid())
+  testId       String
+  test         Test      @relation(fields: [testId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  room         String
+  row          Int // 0-based
+  col          Int // 0-based
+  setIndex     Int
+  downloadedAt DateTime? // when this student's device last downloaded the offline paper
+
+  @@unique([testId, userId])
+  @@unique([testId, room, row, col])
+  @@index([userId])
+}
+
+// An offline answer sheet. DRAFT = a checkpoint the device sends while the exam runs (lets the
+// invigilator see progress and lets a student resume on another computer); PENDING = submitted
+// and waiting to be graded; then PROCESSING, DONE or FAILED. One row per student per test, so
+// re-uploads are harmless.
+model PendingSubmission {
+  id               String    @id @default(cuid())
+  testId           String
+  test             Test      @relation(fields: [testId], references: [id], onDelete: Cascade)
+  userId           String
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  payload          String // JSON: ticket, start/submit times, answers
+  status           String    @default("PENDING") // DRAFT, PENDING, PROCESSING, DONE, FAILED
+  answeredCount    Int       @default(0)
+  updatedAt        DateTime  @default(now())
+  // Server-side timing evidence (the device clock can't be trusted for offline exams)
+  firstSeenAt      DateTime  @default(now()) // first checkpoint or upload, by the server's clock
+  lastCheckpointAt DateTime? // last checkpoint before the final sheet
+  onTimePayload    String? // the last checkpoint that arrived within the time limit
+  error            String?
+  attemptId        String?
+  receivedAt       DateTime  @default(now())
+  claimedAt        DateTime?
+  processedAt      DateTime?
+
+  @@unique([testId, userId])
+  @@index([status, receivedAt])
+  @@index([userId])
 }

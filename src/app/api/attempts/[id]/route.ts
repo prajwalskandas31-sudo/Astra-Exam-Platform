@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/api";
 import { attemptQuestionFilter, canViewAttempt, isFinished, serverTimeRemaining } from "@/lib/attempts";
 import { getTestPaper } from "@/lib/testPaper";
+import { applyLayout, buildLayout } from "@/lib/paperLayout";
 
 export async function GET(
   _request: Request,
@@ -36,7 +37,10 @@ export async function GET(
     }
 
     const finished = isFinished(attempt.status);
-    const questions = attemptQuestionFilter(attempt, test.questions).map((tq) => {
+    // This student's own question and option order (also after submitting, so the review shows
+    // the letters they actually saw). Option IDs are unchanged, so grading is unaffected.
+    const layout = attempt.paperSeed ? buildLayout(test.questions, attempt.paperSeed, test) : null;
+    const questions = applyLayout(attemptQuestionFilter(attempt, test.questions), layout).map((tq) => {
       // Never reveal answers or explanations while the attempt is still running
       if (finished) return tq;
       const { correctOption: _c, explanation: _e, ...safeQuestion } = tq.question;

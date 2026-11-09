@@ -44,10 +44,8 @@ export async function PUT(
     const answers = parseIncomingAnswers(body.answers);
     await Promise.all([
       saveAnswers(id, attempt.testId, answers),
-      // Only the stored clock matters for resume; skip the write when it hasn't moved
-      remaining < attempt.timeRemaining
-        ? prisma.attempt.updateMany({ where: { id, status: { in: ["IN_PROGRESS", "PAUSED"] } }, data: { timeRemaining: remaining } })
-        : null,
+        // The same write records "last seen" for the invigilator's live view (no extra query)
+      prisma.attempt.updateMany({ where: { id, status: { in: ["IN_PROGRESS", "PAUSED"] } }, data: { timeRemaining: Math.min(remaining, attempt.timeRemaining), lastSeenAt: new Date() } }),
     ]);
 
     return NextResponse.json({ success: true, saved: answers.length, timeRemaining: remaining });

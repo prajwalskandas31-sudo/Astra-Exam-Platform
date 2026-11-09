@@ -4,6 +4,10 @@
     {
       "path": "/api/cron/weekly-digest",
       "schedule": "30 3 * * 1"
+    },
+    {
+      "path": "/api/cron/offline-grade",
+      "schedule": "0 20 * * *"
     }
   ],
   "regions": [

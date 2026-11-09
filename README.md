@@ -137,6 +137,52 @@ LOADTEST_PASSWORD=<pw> npm run load:seed -- --remove --confirm          # clean 
 Each simulated student signs in, opens the 180-question paper, autosaves 4 times and submits. The script
 prints p50/p95/p99 latency and errors per step.
 
+## Anti-copying papers, Exam Centre mode and offline exams
+
+**Shuffled papers (every institute).** Each test has a *Paper security* setting (Test Manager → the
+"shuffled / sets / fixed order" badge, or when creating a test):
+
+- *Different order for every student* (default for new tests), *named sets* (2–8 sets, A, B, C…) or *same order*.
+- Options inside each question are shuffled too, except numerical, assertion–reason and match-the-following
+  questions, and any question whose options refer to each other ("All of the above", "Both A and B", "(a) and (c)").
+- Sections (Physics, Chemistry…) stay together; questions shuffle within them.
+- Grading never changes: answers are stored against the option's original ID; only the letter shown on screen
+  follows the shuffled position. Results and reviews show each student the letters they actually saw.
+- Layouts are derived from a seed (`src/lib/paperLayout.ts`), so nothing extra is stored and the server, the
+  browser and an offline device always compute the identical paper.
+
+**Exam Centre mode** (Admin → Organization → *Exam modes*, off by default). Then tick *Run in Exam Centre
+mode* on a test and open **Centre** from the Test Manager:
+
+- **Start code**: students can't begin until the invigilator announces it (8 characters, no look-alike letters).
+- **Rooms & seating**: enter rooms as rows × seats; *Seat everyone* seats students in student-ID order, and with
+  4+ sets no two neighbours (side, front/back or diagonal) get the same set. Export the seat plan as CSV.
+- **Live room view**: per seat — not started, writing, no signal, being graded, submitted — with device IDs
+  and proctoring warnings; refreshes every 10 s.
+- **Student IDs**: import them with the CSV (`student_id`, `roll_no`, `admission_no`… columns) or set them on
+  the Users page. Students can sign in with their student ID instead of an email, on a lab PC or their own laptop.
+
+**Offline exams** (a second switch; it turns Exam Centre mode on with it). Tick *Allow offline* on a centre test:
+
+- In the lobby (`/exam/centre/<testId>`) each device downloads the paper **encrypted with the start code**
+  (PBKDF2 + AES-GCM, `src/lib/paperCrypto.ts`). It contains no answers or explanations and can't be read
+  before the code is announced, even with no internet at that moment.
+- The exam then runs entirely on the device: answers go to IndexedDB on every click, a service worker keeps
+  the page available across reloads, and while there is internet a small checkpoint is sent every ~2 minutes
+  (live view, and resume on another computer if one dies).
+- On submit the answer sheet is saved on the device first, then uploaded with retries. If a computer never
+  gets online, the student downloads the answer file and the invigilator uploads it (*Answer sheets → Upload
+  answer files*). Each sheet carries a signed ticket, so it can only count for the student it was issued to.
+- **No upload storm.** Uploads are stored and acknowledged immediately (one insert, 202) and graded in a
+  background queue (`src/lib/offlineSubmissions.ts`): one drain per 15 s across all instances, rows claimed
+  with `SKIP LOCKED`, ranks recomputed once per drain. A whole centre reconnecting at once costs one small
+  write per student. *Grade queued sheets now* forces a drain; a daily cron is the safety net.
+- **After the exam**, *Collect unfinished papers* submits every remaining checkpoint (dead or abandoned
+  devices) as auto-submitted.
+- Honest limits: a browser can't lock a computer down; for strict halls use Safe Exam Browser or kiosk mode.
+  Offline timing uses the device clock; uploads that overrun the duration or come from a clock running ahead
+  are flagged on the attempt for staff to review.
+
 ## Messaging
 
 Each institute connects its own WhatsApp (Meta Cloud API or Twilio) and SMS (MSG91 with DLT templates, or Twilio)

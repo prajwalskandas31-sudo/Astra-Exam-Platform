@@ -14,7 +14,7 @@ interface OmrExamInterfaceProps {
   onRequestSubmit: () => void;
 }
 
-const DEFAULT_BUBBLES = ["A", "B", "C", "D"].map((id) => ({ id, text: "" }));
+const DEFAULT_BUBBLES: { id: string; text: string; label?: string }[] = ["A", "B", "C", "D"].map((id) => ({ id, text: "" }));
 
 export function OmrExamInterface({ testTitle, syncState, onRequestSubmit }: OmrExamInterfaceProps) {
   const questions = useExamStore((s) => s.questions);
@@ -94,7 +94,7 @@ export function OmrExamInterface({ testTitle, syncState, onRequestSubmit }: OmrE
                 {q.options.length > 0 && (
                   <ul className="mb-3 space-y-1 text-xs text-slate-400">
                     {q.options.map((o) => (
-                      <li key={o.id}><span className="font-semibold text-slate-300">{o.id}.</span> {o.text}</li>
+                      <li key={o.id}><span className="font-semibold text-slate-300">{o.label ?? o.id}.</span> {o.text}</li>
                     ))}
                   </ul>
                 )}
@@ -123,7 +123,7 @@ export function OmrExamInterface({ testTitle, syncState, onRequestSubmit }: OmrE
                             filled ? "scale-105 border-2 border-white bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/40" : "border border-slate-600 bg-slate-800 text-slate-300 hover:bg-slate-700"
                           )}
                         >
-                          {opt.id}
+                          {opt.label ?? opt.id}
                         </button>
                       );
                     })}

@@ -17,7 +17,8 @@ export interface AnswerState {
 export interface ExamQuestion {
   id: string;
   text: string;
-  options: { id: string; text: string }[];
+  /** `label` is the letter shown on screen (shuffled papers); `id` is what gets stored and graded. */
+  options: { id: string; text: string; label?: string }[];
   section: string;
   subject: string | null;
   chapter: string | null;

@@ -7,6 +7,7 @@ import { STAFF_ROLES } from "@/lib/roles";
 import { studentTestVisibility } from "@/lib/attempts";
 import { appBaseUrl } from "@/lib/reportLinks";
 import { sendTestAssigned } from "@/lib/messaging/automations";
+import { examSettingsFromBody, instituteExamModes } from "@/lib/examSettings";
 
 export async function GET(request: Request) {
   try {
@@ -80,8 +81,10 @@ export async function POST(request: Request) {
     }
 
     const templateId = typeof body.templateId === "string" && body.templateId ? body.templateId : null;
+    const settings = examSettingsFromBody(body, await instituteExamModes(session.user.organizationId));
     const test = await prisma.test.create({
       data: {
+        ...settings,
         title,
         description: typeof body.description === "string" ? body.description.trim() || null : null,
         duration,
