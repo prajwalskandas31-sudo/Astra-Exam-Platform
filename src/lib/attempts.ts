@@ -25,6 +25,79 @@ export function serverTimeRemaining(attempt: { startTime: Date; timeRemaining: n
   return Math.max(0, Math.min(attempt.timeRemaining, durationMinutes * 60 - elapsed));
 }
 
+/**
+ * Answers that were already on their way when the clock ran out are still accepted for this
+ * long after the deadline, so a slow network at 00:00 doesn't cost a student their last answers.
+ */
+export const DEADLINE_GRACE_SECONDS = 60;
+
+/** True while the attempt may still take answers (server clock plus the grace period). */
+export function acceptsAnswers(attempt: { startTime: Date }, durationMinutes: number, now = Date.now()) {
+  return now <= attempt.startTime.getTime() + (durationMinutes * 60 + DEADLINE_GRACE_SECONDS) * 1000;
+}
+
+export interface IncomingAnswer {
+  questionId: string;
+  selectedOption: string | null;
+  status: string;
+  timeSpent?: number;
+}
+
+const ANSWER_STATUSES = new Set(["NOT_VISITED", "UNANSWERED", "ANSWERED", "MARKED_FOR_REVIEW", "ANSWERED_AND_MARKED"]);
+const MAX_ANSWERS_PER_WRITE = 1000;
+
+/** Validate and normalise a client payload (object keyed by question id, or an array). */
+export function parseIncomingAnswers(raw: unknown): IncomingAnswer[] {
+  if (!raw || typeof raw !== "object") return [];
+  const list = Array.isArray(raw) ? raw : Object.values(raw);
+  const byQuestion = new Map<string, IncomingAnswer>();
+  for (const a of list.slice(0, MAX_ANSWERS_PER_WRITE)) {
+    if (!a || typeof a !== "object" || typeof a.questionId !== "string" || !a.questionId) continue;
+    byQuestion.set(a.questionId, {
+      questionId: a.questionId.slice(0, 64),
+      selectedOption: a.selectedOption == null || a.selectedOption === "" ? null : String(a.selectedOption).slice(0, 200),
+      status: ANSWER_STATUSES.has(a.status) ? a.status : "UNANSWERED",
+      timeSpent: Math.min(86_400, Math.max(0, Math.floor(Number(a.timeSpent) || 0))),
+    });
+  }
+  return [...byQuestion.values()];
+}
+
+/**
+ * Save a batch of answers in ONE statement (instead of one upsert per answer).
+ * Only questions that belong to the attempt's test are written, and nothing is written once
+ * the attempt has been submitted, so a late autosave can't change a graded attempt.
+ * `db` lets the submit route run this inside its transaction.
+ */
+export async function saveAnswers(
+  attemptId: string,
+  testId: string,
+  answers: IncomingAnswer[],
+  db: Pick<typeof prisma, "$executeRaw"> = prisma
+): Promise<number> {
+  if (answers.length === 0) return 0;
+  const ids = answers.map(() => crypto.randomUUID());
+  const questionIds = answers.map((a) => a.questionId);
+  const selected = answers.map((a) => a.selectedOption);
+  const statuses = answers.map((a) => a.status);
+  const times = answers.map((a) => a.timeSpent ?? 0);
+
+  return db.$executeRaw`
+    INSERT INTO "Answer" ("id", "attemptId", "questionId", "selectedOpt", "status", "timeSpent", "updatedAt")
+    SELECT x.id, ${attemptId}, x.qid, x.sel, x.st, x.ts, NOW()
+    FROM unnest(${ids}::text[], ${questionIds}::text[], ${selected}::text[], ${statuses}::text[], ${times}::int[])
+      AS x(id, qid, sel, st, ts)
+    JOIN "TestQuestion" tq ON tq."testId" = ${testId} AND tq."questionId" = x.qid
+    -- FOR SHARE: waits for an in-progress submit (which holds FOR UPDATE) and then re-checks the
+    -- status, so answers can never land after the attempt was graded
+    WHERE EXISTS (SELECT 1 FROM "Attempt" a WHERE a."id" = ${attemptId} AND a."status" IN ('IN_PROGRESS', 'PAUSED') FOR SHARE)
+    ON CONFLICT ("attemptId", "questionId") DO UPDATE SET
+      "selectedOpt" = EXCLUDED."selectedOpt",
+      "status"      = EXCLUDED."status",
+      "timeSpent"   = EXCLUDED."timeSpent",
+      "updatedAt"   = NOW()`;
+}
+
 /** Who may view an attempt: its owner, staff of the same institute, or a linked parent. */
 export async function canViewAttempt(session: Session, attempt: { userId: string; user?: { organizationId: string | null } | null }) {
   const { role, id, organizationId } = session.user;

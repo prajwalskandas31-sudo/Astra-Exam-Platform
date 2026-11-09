@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import bcrypt from "bcryptjs";
+// Native bcrypt: runs on the libuv thread pool, so a login rush does not block the event loop
+import * as bcrypt from "@node-rs/bcrypt";
 import { prisma } from "@/lib/prisma";
 import { requireRole, tenantWhere } from "@/lib/api";
 import { ADMIN_ROLES, ROLES, STAFF_ROLES, type AppRole } from "@/lib/roles";

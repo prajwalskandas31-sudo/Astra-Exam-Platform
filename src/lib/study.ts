@@ -86,16 +86,12 @@ export function scheduleReview(card: CardState, grade: ReviewGrade, now: Date = 
 export async function queueForReview(userId: string, questionIds: string[]) {
   const ids = [...new Set(questionIds)];
   if (ids.length === 0) return;
-  const now = new Date();
-  await prisma.$transaction(
-    ids.map((questionId) =>
-      prisma.reviewItem.upsert({
-        where: { userId_questionId: { userId, questionId } },
-        create: { userId, questionId, dueAt: now },
-        update: { dueAt: now, repetitions: 0, intervalDays: 0 },
-      })
-    )
-  );
+  // One statement for the whole batch: a 180-question paper can miss dozens at once
+  await prisma.$executeRaw`
+    INSERT INTO "ReviewItem" ("id", "userId", "questionId", "dueAt")
+    SELECT x.id, ${userId}, x.qid, NOW()
+    FROM unnest(${ids.map(() => crypto.randomUUID())}::text[], ${ids}::text[]) AS x(id, qid)
+    ON CONFLICT ("userId", "questionId") DO UPDATE SET "dueAt" = NOW(), "repetitions" = 0, "intervalDays" = 0`;
 }
 
 /** Whole days from today until the given date (negative once it has passed). */

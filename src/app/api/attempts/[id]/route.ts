@@ -2,9 +2,10 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/api";
 import { attemptQuestionFilter, canViewAttempt, isFinished, serverTimeRemaining } from "@/lib/attempts";
+import { getTestPaper } from "@/lib/testPaper";
 
 export async function GET(
-  request: Request,
+  _request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
@@ -16,15 +17,6 @@ export async function GET(
       where: { id },
       include: {
         user: { select: { id: true, name: true, organizationId: true } },
-        test: {
-          include: {
-            template: true,
-            questions: {
-              include: { question: true },
-              orderBy: { order: "asc" }
-            }
-          }
-        },
         answers: true,
         _count: { select: { violations: true } }
       }
@@ -37,8 +29,14 @@ export async function GET(
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
+    // The paper is shared by everyone taking the test, so it comes from a short-lived cache
+    const test = await getTestPaper(attempt.testId);
+    if (!test) {
+      return NextResponse.json({ error: "Not Found" }, { status: 404 });
+    }
+
     const finished = isFinished(attempt.status);
-    const questions = attemptQuestionFilter(attempt, attempt.test.questions).map((tq) => {
+    const questions = attemptQuestionFilter(attempt, test.questions).map((tq) => {
       // Never reveal answers or explanations while the attempt is still running
       if (finished) return tq;
       const { correctOption: _c, explanation: _e, ...safeQuestion } = tq.question;
@@ -49,10 +47,10 @@ export async function GET(
 
     return NextResponse.json({
       ...attempt,
-      timeRemaining: finished ? attempt.timeRemaining : serverTimeRemaining(attempt, attempt.test.duration),
+      timeRemaining: finished ? attempt.timeRemaining : serverTimeRemaining(attempt, test.duration),
       maxScore,
       violationCount: attempt._count.violations,
-      test: { ...attempt.test, questions }
+      test: { ...test, questions }
     });
   } catch (error) {
     console.error("[ATTEMPT_GET]", error);

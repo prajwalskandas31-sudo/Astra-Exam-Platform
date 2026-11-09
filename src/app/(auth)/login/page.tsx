@@ -15,6 +15,7 @@ const LOGIN_ERRORS: Record<string, string> = {
   AccountRejected: "This account has been deactivated. Please contact your institute.",
   AccountDisabled: "This account has been deactivated. Please contact your institute.",
   SessionInvalid: "You were signed out because your account was used to sign in on another device.",
+  TooManyAttempts: "Too many sign-in attempts. Please wait 15 minutes and try again, or reset your password.",
 };
 
 export default function LoginPage() {

@@ -1,9 +1,11 @@
 import crypto from "crypto";
-import bcrypt from "bcryptjs";
+// Native bcrypt: runs on the libuv thread pool, so a login rush does not block the event loop
+import * as bcrypt from "@node-rs/bcrypt";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { jsonError } from "@/lib/api";
 import { notify } from "@/lib/messaging";
+import { clientIp, rateLimit, tooManyRequests } from "@/lib/rateLimit";
 
 const CODE_TTL_MS = 10 * 60 * 1000;
 const MAX_CODES_PER_HOUR = 3;
@@ -17,6 +19,10 @@ const GENERIC = {
 /** Step 1 — Body: { email }. Sends a one-time code to the account's registered phone. */
 export async function POST(request: Request) {
   try {
+    // Each code costs a WhatsApp/SMS message, so cap how many one network can trigger
+    const limited = await rateLimit(`forgot:ip:${clientIp(request.headers)}`, 20, 60 * 60);
+    if (!limited.ok) return tooManyRequests(limited.retryAfter);
+
     const { email } = await request.json();
     if (typeof email !== "string" || !email.includes("@")) return jsonError("Enter your account email");
 
@@ -49,6 +55,9 @@ export async function POST(request: Request) {
 /** Step 2 — Body: { email, code, newPassword }. Verifies the latest code and sets the new password. */
 export async function PUT(request: Request) {
   try {
+    const limited = await rateLimit(`reset:ip:${clientIp(request.headers)}`, 30, 60 * 60);
+    if (!limited.ok) return tooManyRequests(limited.retryAfter);
+
     const { email, code, newPassword } = await request.json();
     if (typeof newPassword !== "string" || newPassword.length < 8) return jsonError("New password must be at least 8 characters");
     if (typeof code !== "string" || !/^\d{6}$/.test(code.trim())) return jsonError("Enter the 6-digit code");

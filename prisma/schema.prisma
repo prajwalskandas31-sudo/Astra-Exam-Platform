@@ -59,49 +59,49 @@ enum AttemptStatus {
 }
 
 model Organization {
-  id              String         @id @default(cuid())
-  name            String
-  slug            String         @unique
-  logoUrl         String?
-  primaryColor    String?        @default("#3b82f6")
-  secondaryColor  String?        @default("#1e40af")
-  contactEmail    String?
-  contactPhone    String?
-  academicYear    String?        @default("2026-2027")
-  customDomain    String?        @unique
-  whatsappConfig  String?        // JSON configuration for notification provider
-  offeredCategories String?      // JSON Array of strings (e.g. '["AFCAT", "GATE"]')
-  users           User[]
-  batches         Batch[]
-  tests           Test[]
-  questions       Question[]
-  examTemplates   ExamTemplate[]
-  announcements   Announcement[]
-  resources       Resource[]
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
+  id                String         @id @default(cuid())
+  name              String
+  slug              String         @unique
+  logoUrl           String?
+  primaryColor      String?        @default("#3b82f6")
+  secondaryColor    String?        @default("#1e40af")
+  contactEmail      String?
+  contactPhone      String?
+  academicYear      String?        @default("2026-2027")
+  customDomain      String?        @unique
+  whatsappConfig    String? // JSON configuration for notification provider
+  offeredCategories String? // JSON Array of strings (e.g. '["AFCAT", "GATE"]')
+  users             User[]
+  batches           Batch[]
+  tests             Test[]
+  questions         Question[]
+  examTemplates     ExamTemplate[]
+  announcements     Announcement[]
+  resources         Resource[]
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
 }
 
 model User {
-  id              String              @id @default(cuid())
-  email           String              @unique
+  id              String           @id @default(cuid())
+  email           String           @unique
   password        String
   name            String
   phone           String?
-  role            Role                @default(STUDENT)
-  status          Status              @default(PENDING)
+  role            Role             @default(STUDENT)
+  status          Status           @default(PENDING)
   organizationId  String?
-  organization    Organization?       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization    Organization?    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   batchId         String?
-  batch           Batch?              @relation(fields: [batchId], references: [id], onDelete: SetNull)
+  batch           Batch?           @relation(fields: [batchId], references: [id], onDelete: SetNull)
   attempts        Attempt[]
   requests        TestRequest[]
   sessionId       String?
-  examTracks      String?             // JSON array of exam categories the student is preparing for
-  targetExamDate  DateTime?           // student's exam day, drives the dashboard countdown
-  dailyGoal       Int                 @default(30) // questions per day
-  notifyWhatsapp  Boolean             @default(true) // opt-out of WhatsApp messages
-  notifySms       Boolean             @default(true) // opt-out of SMS messages
+  examTracks      String? // JSON array of exam categories the student is preparing for
+  targetExamDate  DateTime? // student's exam day, drives the dashboard countdown
+  dailyGoal       Int              @default(30) // questions per day
+  notifyWhatsapp  Boolean          @default(true) // opt-out of WhatsApp messages
+  notifySms       Boolean          @default(true) // opt-out of SMS messages
   passwordResets  PasswordReset[]
   bookmarks       Bookmark[]
   reviewItems     ReviewItem[]
@@ -109,13 +109,16 @@ model User {
   questionReports QuestionReport[]
   announcements   Announcement[]
   resources       Resource[]
-  
-  // Parent - Student Linkage
-  parentLinks     ParentStudentLink[] @relation("ParentLink")
-  studentLinks    ParentStudentLink[] @relation("StudentLink")
 
-  createdAt       DateTime            @default(now())
-  updatedAt       DateTime            @updatedAt
+  // Parent - Student Linkage
+  parentLinks  ParentStudentLink[] @relation("ParentLink")
+  studentLinks ParentStudentLink[] @relation("StudentLink")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId, role])
+  @@index([batchId])
 }
 
 model ParentStudentLink {
@@ -127,6 +130,7 @@ model ParentStudentLink {
   createdAt DateTime @default(now())
 
   @@unique([parentId, studentId])
+  @@index([studentId])
 }
 
 model Batch {
@@ -140,61 +144,67 @@ model Batch {
   updatedAt      DateTime      @updatedAt
 
   @@unique([name, organizationId])
+  @@index([organizationId])
 }
 
 model ExamTemplate {
   id                 String        @id @default(cuid())
-  name               String        // e.g. "JEE Main CBT 2026", "NEET OMR Practice", "AFCAT Standard"
-  examCategory       String        // e.g. "JEE", "NEET", "GATE", "AFCAT", "SSC", "CUSTOM"
+  name               String // e.g. "JEE Main CBT 2026", "NEET OMR Practice", "AFCAT Standard"
+  examCategory       String // e.g. "JEE", "NEET", "GATE", "AFCAT", "SSC", "CUSTOM"
   mode               ExamMode      @default(CBT)
-  totalDuration      Int           // total duration in minutes
+  totalDuration      Int // total duration in minutes
   isSectionalTiming  Boolean       @default(false)
   hasNegativeMarking Boolean       @default(true)
-  config             String        // JSON configuration (sections, marking, cutoffs, proctoring rules, navigation)
+  config             String // JSON configuration (sections, marking, cutoffs, proctoring rules, navigation)
   organizationId     String?
   organization       Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   tests              Test[]
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @updatedAt
+
+  @@index([organizationId])
 }
 
 model Question {
-  id             String         @id @default(cuid())
-  text           String         // Rich text or markdown
-  options        String         // JSON string of Array of { id, text }
-  correctOption  String         // ID or answer string
+  id             String           @id @default(cuid())
+  text           String // Rich text or markdown
+  options        String // JSON string of Array of { id, text }
+  correctOption  String // ID or answer string
   explanation    String?
   subject        String
   chapter        String?
   topic          String
   subtopic       String?
-  difficulty     String         @default("MEDIUM") // EASY, MEDIUM, HARD
-  questionType   QuestionType   @default(SINGLE_CHOICE)
-  marks          Float          @default(1.0)
-  negativeMarks  Float          @default(0.0)
-  tags           String         // Comma-separated string
-  estimatedTime  Int            @default(60) // in seconds
+  difficulty     String           @default("MEDIUM") // EASY, MEDIUM, HARD
+  questionType   QuestionType     @default(SINGLE_CHOICE)
+  marks          Float            @default(1.0)
+  negativeMarks  Float            @default(0.0)
+  tags           String // Comma-separated string
+  estimatedTime  Int              @default(60) // in seconds
   examCategory   String?
   year           Int?
-  language       String         @default("en")
-  sourceFile     String?        // Name of the source file
-  status         String         @default("PUBLISHED") // DRAFT, PUBLISHED
+  language       String           @default("en")
+  sourceFile     String? // Name of the source file
+  status         String           @default("PUBLISHED") // DRAFT, PUBLISHED
   organizationId String?
-  organization   Organization?  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization   Organization?    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   tests          TestQuestion[]
   answers        Answer[]
   bookmarks      Bookmark[]
   reviewItems    ReviewItem[]
   reports        QuestionReport[]
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  @@index([organizationId, subject, topic])
+  @@index([examCategory])
 }
 
 model Test {
   id             String         @id @default(cuid())
   title          String
   description    String?
-  duration       Int            // in minutes
+  duration       Int // in minutes
   totalMarks     Int
   type           TestType       @default(PRACTICE)
   mode           ExamMode       @default(CBT)
@@ -204,7 +214,7 @@ model Test {
   scheduledEnd   DateTime?
   templateId     String?
   template       ExamTemplate?  @relation(fields: [templateId], references: [id], onDelete: SetNull)
-  ownerId        String?        // set for a student's private custom quiz; hidden from every listing
+  ownerId        String? // set for a student's private custom quiz; hidden from every listing
   organizationId String?
   organization   Organization?  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   batches        Batch[]        @relation("BatchTests")
@@ -212,6 +222,10 @@ model Test {
   attempts       Attempt[]
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
+
+  @@index([organizationId, isPublished])
+  @@index([ownerId])
+  @@index([templateId])
 }
 
 model TestQuestion {
@@ -220,10 +234,11 @@ model TestQuestion {
   test       Test     @relation(fields: [testId], references: [id], onDelete: Cascade)
   questionId String
   question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
-  order      Int      // To allow explicit ordering
-  section    String?  // Optional section grouping (e.g. Physics, General Awareness)
-  
+  order      Int // To allow explicit ordering
+  section    String? // Optional section grouping (e.g. Physics, General Awareness)
+
   @@unique([testId, questionId])
+  @@index([questionId])
 }
 
 model Attempt {
@@ -243,14 +258,14 @@ model Attempt {
   unattemptedCount Int?          @default(0)
   rank             Int?
   percentile       Float?
-  subjectScores    String?       // JSON string
-  chapterScores    String?       // JSON string
-  topicScores      String?       // JSON string
-  weakTopics       String?       // JSON string list of weak topics
-  strongTopics     String?       // JSON string list of strong topics
+  subjectScores    String? // JSON string
+  chapterScores    String? // JSON string
+  topicScores      String? // JSON string
+  weakTopics       String? // JSON string list of weak topics
+  strongTopics     String? // JSON string list of strong topics
   startTime        DateTime      @default(now())
   endTime          DateTime?
-  timeRemaining    Int           // Seconds left
+  timeRemaining    Int // Seconds left
   answers          Answer[]
   violations       Violation[]
   mentorComment    String?
@@ -258,6 +273,10 @@ model Attempt {
   parentAttemptId  String?
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
+
+  @@index([userId, status])
+  @@index([testId, status, score])
+  @@index([userId, testId])
 }
 
 model Answer {
@@ -266,7 +285,7 @@ model Answer {
   attempt     Attempt  @relation(fields: [attemptId], references: [id], onDelete: Cascade)
   questionId  String
   question    Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
-  selectedOpt String?  // Option ID or submitted answer value
+  selectedOpt String? // Option ID or submitted answer value
   isCorrect   Boolean?
   timeSpent   Int      @default(0) // Seconds spent on this question
   status      String   @default("UNANSWERED") // SAVED, MARKED_FOR_REVIEW, UNANSWERED
@@ -276,48 +295,54 @@ model Answer {
   updatedAt   DateTime @updatedAt
 
   @@unique([attemptId, questionId])
+  @@index([questionId])
 }
 
 model Violation {
   id        String   @id @default(cuid())
   attemptId String
   attempt   Attempt  @relation(fields: [attemptId], references: [id], onDelete: Cascade)
-  type      String   // TAB_SWITCH, BLUR, COPY_PASTE, FULLSCREEN_EXIT
+  type      String // TAB_SWITCH, BLUR, COPY_PASTE, FULLSCREEN_EXIT
   timestamp DateTime @default(now())
+
+  @@index([attemptId])
 }
 
 model TestRequest {
-  id        String   @id @default(cuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  count     Int      // 3-5
-  category  TestType @default(PRACTICE)
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  count        Int // 3-5
+  category     TestType @default(PRACTICE)
   examCategory String?
-  notes     String?
-  status    Status   @default(PENDING)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  notes        String?
+  status       Status   @default(PENDING)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([userId, status])
 }
 
 model NotificationLog {
   id                String   @id @default(cuid())
   recipientPhone    String
   recipientName     String?
-  recipientUserId   String?  // the user it was meant for, when known
-  type              String   // RESULT_NOTIFICATION, TEST_ASSIGNED, WEEKLY_REPORT, PASSWORD_RESET, TEST_MESSAGE
+  recipientUserId   String? // the user it was meant for, when known
+  type              String // RESULT_NOTIFICATION, TEST_ASSIGNED, WEEKLY_REPORT, PASSWORD_RESET, TEST_MESSAGE
   channel           String   @default("WHATSAPP") // WHATSAPP, SMS
-  provider          String?  // META, TWILIO, MSG91
-  status            String   // SENT, FAILED, SKIPPED
-  error             String?  // why it failed or was skipped
+  provider          String? // META, TWILIO, MSG91
+  status            String // SENT, FAILED, SKIPPED
+  error             String? // why it failed or was skipped
   providerMessageId String?
   attempts          Int      @default(1)
-  payload           String   // JSON: message text and template variables (lets a failed message be retried)
+  payload           String // JSON: message text and template variables (lets a failed message be retried)
   reportUrl         String?
-  organizationId    String?  // tenant that sent it; logs are only visible to that institute
+  organizationId    String? // tenant that sent it; logs are only visible to that institute
   createdAt         DateTime @default(now())
   updatedAt         DateTime @default(now()) @updatedAt
 
   @@index([organizationId, createdAt])
+  @@index([recipientUserId])
 }
 
 model Bookmark {
@@ -330,6 +355,7 @@ model Bookmark {
   createdAt  DateTime @default(now())
 
   @@unique([userId, questionId])
+  @@index([questionId])
 }
 
 model Announcement {
@@ -343,6 +369,9 @@ model Announcement {
   organizationId String?
   organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   createdAt      DateTime      @default(now())
+
+  @@index([organizationId, createdAt])
+  @@index([authorId])
 }
 
 model Resource {
@@ -357,6 +386,9 @@ model Resource {
   organizationId String?
   organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   createdAt      DateTime      @default(now())
+
+  @@index([organizationId])
+  @@index([authorId])
 }
 
 // Spaced-repetition card: a question the student got wrong, scheduled for review (SM-2 style).
@@ -376,6 +408,7 @@ model ReviewItem {
 
   @@unique([userId, questionId])
   @@index([userId, dueAt])
+  @@index([questionId])
 }
 
 // One row per student per day: questions answered in tests plus review cards, for goals and streaks.
@@ -397,7 +430,7 @@ model QuestionReport {
   question       Question  @relation(fields: [questionId], references: [id], onDelete: Cascade)
   userId         String
   user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  reason         String    // WRONG_ANSWER, TYPO, UNCLEAR, OUTDATED, OTHER
+  reason         String // WRONG_ANSWER, TYPO, UNCLEAR, OUTDATED, OTHER
   details        String?
   status         String    @default("OPEN") // OPEN, RESOLVED, DISMISSED
   resolution     String?
@@ -406,6 +439,8 @@ model QuestionReport {
   resolvedAt     DateTime?
 
   @@index([organizationId, status])
+  @@index([questionId])
+  @@index([userId])
 }
 
 // One-time code for resetting a password, delivered by WhatsApp/SMS. Only the hash is stored.
@@ -434,4 +469,14 @@ model ReportLink {
   createdAt      DateTime  @default(now())
 
   @@index([attemptId])
+  @@index([studentId])
+}
+
+// Fixed-window request counter used to throttle login, sign-up and password-reset attempts.
+model RateLimit {
+  key     String   @id // e.g. "login:email:asha@apex.in" or "register:ip:203.0.113.7"
+  count   Int      @default(0)
+  resetAt DateTime
+
+  @@index([resetAt])
 }

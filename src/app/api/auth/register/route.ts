@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
-import bcrypt from "bcryptjs";
+// Native bcrypt: runs on the libuv thread pool, so a login rush does not block the event loop
+import * as bcrypt from "@node-rs/bcrypt";
 import { prisma } from "@/lib/prisma";
+import { clientIp, rateLimit, tooManyRequests } from "@/lib/rateLimit";
 
 // Public sign-up: students and parents are active immediately, mentors wait for admin approval.
 // Admin roles can only be granted by an existing admin.
@@ -11,6 +13,9 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export async function POST(request: Request) {
   try {
+    const limited = await rateLimit(`register:ip:${clientIp(request.headers)}`, 30, 60 * 60);
+    if (!limited.ok) return tooManyRequests(limited.retryAfter, "Too many sign-ups from this network. Please try again later.");
+
     const body = await request.json();
     const name = typeof body.name === "string" ? body.name.trim() : "";
     const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
