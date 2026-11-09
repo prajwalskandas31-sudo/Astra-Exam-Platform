@@ -82,7 +82,12 @@ export async function receiveSheet(
 
   // A student's own device must upload within the window; after that, the invigilator uploads
   // the exported file (staff uploads are audited)
-  const examEnd = Math.max(test.scheduledEnd?.getTime() ?? 0, ticket.issuedAt + test.duration * 60_000);
+  // The schedule wins when there is one: a paper issued after the exam closed never counts, and
+  // the upload window runs from the scheduled end (untimed tests: from when the paper was issued)
+  if (isOwner && test.scheduledEnd && ticket.issuedAt > test.scheduledEnd.getTime()) {
+    return { ok: false, error: "This paper was downloaded after the exam closed", status: 403 };
+  }
+  const examEnd = test.scheduledEnd?.getTime() ?? ticket.issuedAt + test.duration * 60_000;
   if (isOwner && Date.now() > examEnd + UPLOAD_WINDOW_MS) {
     return { ok: false, error: "The upload window for this exam has closed. Download your answer file and give it to your invigilator.", status: 410 };
   }

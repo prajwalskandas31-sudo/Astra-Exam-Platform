@@ -79,7 +79,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ test
 
     const version = test.startCode ? crypto.createHash("sha256").update(`${test.startCode}:${test.updatedAt.toISOString()}`).digest("hex").slice(0, 12) : null;
     let paper: { data: EncryptedPaper; ticket: string; version: string } | null = null;
-    if (wantPaper && offline && test.startCode && version) {
+    // No new papers once the exam window has closed
+    const closed = !!test.scheduledEnd && test.scheduledEnd.getTime() < Date.now();
+    if (wantPaper && offline && test.startCode && version && !closed) {
       paper = {
         data: await encryptedPaper({ id: test.id, startCode: test.startCode, updatedAt: test.updatedAt }, version),
         ticket: signTicket({ v: 1, testId, userId: session.user.id, paperSeed: assignment?.paperSeed ?? null, setCode: assignment?.setCode ?? null, issuedAt: Date.now() }),
@@ -101,6 +103,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ test
         id: test.id, title: test.title, duration: test.duration, mode: test.mode,
         scheduledStart: test.scheduledStart, scheduledEnd: test.scheduledEnd, offline,
         ready: !!test.startCode,
+        closed,
       },
       student: { name: student?.name ?? session.user.name, studentCode: student?.studentCode ?? null },
       seat: seat ? { label: seatLabel(seat), room: seat.room, row: seat.row, col: seat.col } : null,
