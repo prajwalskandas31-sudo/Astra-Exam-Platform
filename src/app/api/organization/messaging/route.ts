@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { jsonError, requireRole } from "@/lib/api";
+import { audit } from "@/lib/audit";
 import { ADMIN_ROLES } from "@/lib/roles";
 import { applyUpdate, maskConfig, parseConfig, serializeConfig } from "@/lib/messaging/config";
 import { TEMPLATE_VARIABLES, notify, webhookUrl } from "@/lib/messaging";
@@ -68,6 +69,7 @@ export async function PATCH(request: Request) {
     if (next.sms.provider === "MSG91" && !next.sms.msg91.authKey) return jsonError("MSG91 needs an auth key");
 
     await prisma.organization.update({ where: { id: org.id }, data: { whatsappConfig: serializeConfig(next) } });
+    await audit(session, { action: "messaging.update", targetType: "Organization", summary: `WhatsApp: ${next.whatsapp.provider}, SMS: ${next.sms.provider}` }, request);
     return NextResponse.json({ config: maskConfig(next) });
   } catch (error) {
     console.error("[MESSAGING_PATCH]", error);

@@ -2,6 +2,7 @@ import { NextResponse, after } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireRole, tenantOrGlobalWhere } from "@/lib/api";
+import { audit } from "@/lib/audit";
 import { STAFF_ROLES } from "@/lib/roles";
 import { studentTestVisibility } from "@/lib/attempts";
 import { appBaseUrl } from "@/lib/reportLinks";
@@ -108,6 +109,7 @@ export async function POST(request: Request) {
       const baseUrl = appBaseUrl(request);
       after(() => sendTestAssigned(test.id, baseUrl).catch((e) => console.error("[TEST_ASSIGNED_ALERT]", e)));
     }
+    await audit(session, { action: "test.create", targetType: "Test", targetId: test.id, summary: `Created ${test.isPublished ? "and published " : ""}"${test.title}"` }, request);
     return NextResponse.json(test);
   } catch (error) {
     console.error("[TESTS_POST]", error);

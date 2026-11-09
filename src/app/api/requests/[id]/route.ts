@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireRole, tenantWhere } from "@/lib/api";
+import { audit } from "@/lib/audit";
 import { STAFF_ROLES } from "@/lib/roles";
 
 export async function PATCH(
@@ -21,6 +22,7 @@ export async function PATCH(
     if (!existing) return NextResponse.json({ error: "Request not found" }, { status: 404 });
 
     const testRequest = await prisma.testRequest.update({ where: { id }, data: { status } });
+    await audit(session, { action: `testRequest.${status.toLowerCase()}`, targetType: "TestRequest", targetId: id, summary: `${status === "APPROVED" ? "Approved" : "Rejected"} a request for ${existing.count} tests` }, request);
     return NextResponse.json(testRequest);
   } catch (error) {
     console.error("[REQUEST_PATCH]", error);

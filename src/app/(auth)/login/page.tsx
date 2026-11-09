@@ -15,6 +15,7 @@ const LOGIN_ERRORS: Record<string, string> = {
   AccountRejected: "This account has been deactivated. Please contact your institute.",
   AccountDisabled: "This account has been deactivated. Please contact your institute.",
   SessionInvalid: "You were signed out because your account was used to sign in on another device.",
+  TooManyAttempts: "Too many sign-in attempts. Please wait 15 minutes and try again, or reset your password.",
 };
 
 export default function LoginPage() {
@@ -33,6 +34,9 @@ export default function LoginPage() {
   const [mobile, setMobile] = useState("");
   const [signupPassword, setSignupPassword] = useState("");
   const [signupRole, setSignupRole] = useState<"STUDENT" | "PARENT" | "MENTOR">("STUDENT");
+  // Institute join code, prefilled from the /join/<code> link an institute shares
+  const [joinCode, setJoinCode] = useState("");
+  const [joinInstitute, setJoinInstitute] = useState<string | null>(null);
 
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -41,9 +45,28 @@ export default function LoginPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("mode") === "signup") setAuthMode("signup");
+    const invite = params.get("code");
+    if (invite) {
+      setJoinCode(invite.toUpperCase());
+      setAuthMode("signup");
+    }
     const code = params.get("error");
     if (code) setError(LOGIN_ERRORS[code] ?? "Please sign in to continue.");
   }, []);
+
+  useEffect(() => {
+    const code = joinCode.replace(/[^A-Za-z0-9]/g, "");
+    if (code.length < 6) {
+      setJoinInstitute(null);
+      return;
+    }
+    const ctrl = new AbortController();
+    fetch(`/api/auth/join-code?code=${encodeURIComponent(code)}`, { signal: ctrl.signal })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setJoinInstitute(d?.name ?? null))
+      .catch(() => {});
+    return () => ctrl.abort();
+  }, [joinCode]);
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -82,7 +105,8 @@ export default function LoginPage() {
           email: signupEmail,
           phone: mobile,
           password: signupPassword,
-          role: signupRole
+          role: signupRole,
+          joinCode
         })
       });
 
@@ -293,6 +317,20 @@ export default function LoginPage() {
               </div>
 
               <div className="space-y-1.5">
+                <label htmlFor="join-code" className="text-xs font-bold text-slate-300 uppercase tracking-wider block">Institute Code</label>
+                <input
+                  id="join-code"
+                  type="text"
+                  value={joinCode}
+                  onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+                  placeholder="From your institute's sign-up link, e.g. K7M2QX9P"
+                  autoComplete="off"
+                  className="w-full px-4 py-3 bg-slate-900/80 border border-white/10 rounded-xl text-xs font-mono tracking-widest text-white focus:outline-none focus:border-blue-500 transition-colors"
+                />
+                {joinInstitute && <p className="text-[11px] text-emerald-300">Joining {joinInstitute}</p>}
+              </div>
+
+              <div className="space-y-1.5">
                 <label className="text-xs font-bold text-slate-300 uppercase tracking-wider block">Full Name</label>
                 <div className="relative">
                   <User className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
@@ -367,7 +405,13 @@ export default function LoginPage() {
             </form>
           )}
 
-          {/* Quick-Fill Demo Login Buttons including Parent Profile */}
+          <p className="pt-2 text-center text-[11px] text-slate-400">
+            Run a coaching institute?{" "}
+            <Link href="/register-institute" className="font-semibold text-blue-400 hover:text-blue-300">Set up your institute free →</Link>
+          </p>
+
+          {/* Quick-fill demo logins: local and preview only (they'd only confuse real users) */}
+          {process.env.NEXT_PUBLIC_SHOW_DEMO_LOGINS === "true" && (
           <div className="pt-4 border-t border-white/10 space-y-2 text-center">
             <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Quick Demo Login Presets</p>
             <div className="grid grid-cols-4 gap-1.5">
@@ -401,6 +445,7 @@ export default function LoginPage() {
               </button>
             </div>
           </div>
+          )}
 
         </div>
 

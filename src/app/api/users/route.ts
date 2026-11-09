@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
-import bcrypt from "bcryptjs";
+// Native bcrypt: runs on the libuv thread pool, so a login rush does not block the event loop
+import * as bcrypt from "@node-rs/bcrypt";
 import { prisma } from "@/lib/prisma";
 import { requireRole, tenantWhere } from "@/lib/api";
+import { audit } from "@/lib/audit";
 import { ADMIN_ROLES, ROLES, STAFF_ROLES, type AppRole } from "@/lib/roles";
 
 export async function GET(request: Request) {
@@ -96,6 +98,7 @@ export async function POST(request: Request) {
       select: { id: true, name: true, email: true, role: true, status: true }
     });
 
+    await audit(session, { action: "user.create", targetType: "User", targetId: user.id, summary: `Created ${user.role.toLowerCase()} ${user.email}` }, request);
     return NextResponse.json(user);
   } catch (error) {
     console.error("[USERS_POST]", error);

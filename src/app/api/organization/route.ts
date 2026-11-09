@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireRole, safeJson } from "@/lib/api";
+import { audit } from "@/lib/audit";
 import { ADMIN_ROLES } from "@/lib/roles";
 
 const HEX = /^#[0-9a-fA-F]{6}$/;
@@ -74,6 +75,7 @@ export async function PATCH(request: Request) {
 
     const updated = await prisma.organization.update({ where: { id: org.id }, data });
     const { whatsappConfig: _w, ...rest } = updated;
+    await audit(session, { action: "organization.update", targetType: "Organization", targetId: updated.id, summary: "Updated institute branding/details" }, request);
     return NextResponse.json({ ...rest, offeredCategories: safeJson<string[]>(updated.offeredCategories, []) });
   } catch (error) {
     console.error("[ORG_PATCH]", error);

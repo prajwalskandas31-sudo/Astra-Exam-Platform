@@ -39,8 +39,7 @@ export default function Home() {
       subtitle: "GMC UK Pattern • High Yield Clinical Scenarios",
       testsCount: "180+ Mock Tests",
       validity: "720 Days",
-      enrolled: "6,420 Aspirants",
-      badge: "🔥 HOT",
+      badge: "PLAB 1",
       badgeBg: "bg-rose-500/20 text-rose-300 border-rose-500/40",
       gradient: "from-blue-600 via-indigo-600 to-purple-600",
       originalPrice: "₹8,999",
@@ -60,8 +59,7 @@ export default function Home() {
       subtitle: "Pen & Paper OMR + CBT Dual Mode",
       testsCount: "197 Mock Tests",
       validity: "365 Days",
-      enrolled: "8,950 Students",
-      badge: "⭐ TOP RATED",
+      badge: "NEET UG",
       badgeBg: "bg-emerald-500/20 text-emerald-300 border-emerald-500/40",
       gradient: "from-emerald-600 via-teal-600 to-cyan-600",
       originalPrice: "₹6,499",
@@ -81,8 +79,7 @@ export default function Home() {
       subtitle: "NTA CBT Software Replica • Integer & Numerical Qs",
       testsCount: "165 Mock Tests",
       validity: "365 Days",
-      enrolled: "5,310 Aspirants",
-      badge: "🚀 POPULAR",
+      badge: "JEE",
       badgeBg: "bg-purple-500/20 text-purple-300 border-purple-500/40",
       gradient: "from-purple-600 via-pink-600 to-rose-600",
       originalPrice: "₹7,499",
@@ -102,7 +99,6 @@ export default function Home() {
       subtitle: "Scientific Calculator Integrated • Branch-wise Tests",
       testsCount: "140 Mock Tests",
       validity: "540 Days",
-      enrolled: "3,120 Aspirants",
       badge: "NEW",
       badgeBg: "bg-amber-500/20 text-amber-300 border-amber-500/40",
       gradient: "from-amber-500 via-orange-600 to-red-600",
@@ -142,33 +138,6 @@ export default function Home() {
     {
       q: "Can I practice on mobile phones and tablets?",
       a: "Absolutely! The entire platform is built with high-performance responsive web design. You can attempt CBT mocks or fill pen-paper OMR bubble sheets on desktop laptops, tablets, or smartphones seamlessly."
-    }
-  ];
-
-  const testimonials = [
-    {
-      name: "Dr. Ananya Roy",
-      exam: "PLAB 1 Passed (168 / 180)",
-      date: "Nov 2025 Exam",
-      avatar: "👩‍⚕️",
-      text: "The Astra Exam Platform CBT software replica is identical to the actual exam screen in London! The timer layout and single-click question navigation gave me total confidence on exam day.",
-      rankBadge: "PLAB 1 QUALIFIED"
-    },
-    {
-      name: "Rohan Varma",
-      exam: "NEET UG • AIR 241",
-      date: "May 2025 Attempt",
-      avatar: "👨‍🎓",
-      text: "The interactive Pen-Paper OMR sheet simulator helped me eliminate silly bubbling mistakes. The automated WhatsApp reports kept my parents updated after every Sunday mock test!",
-      rankBadge: "AIR 241"
-    },
-    {
-      name: "Siddharth Mehta",
-      exam: "JEE Main • 99.92 %ile",
-      date: "Jan 2026 Session",
-      avatar: "🧑‍💻",
-      text: "The instant weakness detector flagged my weak topics in Electrodynamics. Taking the 1-click adaptive retests boosted my physics score from 62 to 96 marks in just 3 weeks.",
-      rankBadge: "99.92 %ile"
     }
   ];
 
@@ -220,7 +189,6 @@ export default function Home() {
             <a href="#simulator" className="hover:text-blue-400 transition-colors">Live CBT Simulator</a>
             <a href="#features" className="hover:text-blue-400 transition-colors">Features</a>
             <a href="#why-us" className="hover:text-blue-400 transition-colors">Why Choose Us</a>
-            <a href="#reviews" className="hover:text-blue-400 transition-colors">Testimonials</a>
             <a href="#faq" className="hover:text-blue-400 transition-colors">FAQ</a>
           </div>
 
@@ -230,7 +198,12 @@ export default function Home() {
                 Sign In
               </Button>
             </Link>
-            <Link href="/login">
+            <Link href="/register-institute" className="hidden md:block">
+              <Button variant="ghost" className="text-slate-300 hover:text-white hover:bg-white/10 transition-all font-bold text-sm px-4">
+                For Institutes
+              </Button>
+            </Link>
+            <Link href="/login?mode=signup">
               <Button className="bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-500 hover:from-blue-500 hover:to-indigo-500 text-white shadow-[0_0_25px_rgba(37,99,235,0.4)] hover:shadow-[0_0_35px_rgba(37,99,235,0.6)] transition-all font-bold rounded-xl px-5 h-10 text-sm">
                 Register Free
               </Button>
@@ -276,24 +249,19 @@ export default function Home() {
           </a>
         </div>
 
-        {/* Metrics Matrix Banner */}
+        {/* What the platform does (facts only, no usage numbers) */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 max-w-5xl mx-auto p-6 rounded-3xl bg-slate-900/60 border border-white/10 backdrop-blur-xl shadow-2xl mb-24">
-          <div className="p-4 text-center">
-            <p className="text-3xl sm:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-400">15,000+</p>
-            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mt-1.5">Active Aspirants</p>
-          </div>
-          <div className="p-4 text-center border-l border-white/10">
-            <p className="text-3xl sm:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-400">500,000+</p>
-            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mt-1.5">Curated Q-Bank</p>
-          </div>
-          <div className="p-4 text-center border-l border-white/10">
-            <p className="text-3xl sm:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400">99.8%</p>
-            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mt-1.5">Screen Accuracy</p>
-          </div>
-          <div className="p-4 text-center border-l border-white/10">
-            <p className="text-3xl sm:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-orange-400">0 ms</p>
-            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mt-1.5">Autosave Latency</p>
-          </div>
+          {[
+            { value: "CBT + OMR", label: "Exam modes", tone: "from-blue-400 to-indigo-400" },
+            { value: "Autosave", label: "Resumes after a dropped connection", tone: "from-emerald-400 to-teal-400" },
+            { value: "1,000+", label: "Students in one sitting (load-tested)", tone: "from-purple-400 to-pink-400" },
+            { value: "WhatsApp", label: "Results to students & parents", tone: "from-amber-400 to-orange-400" },
+          ].map((m, i) => (
+            <div key={m.label} className={`p-4 text-center ${i ? "border-l border-white/10" : ""}`}>
+              <p className={`text-2xl sm:text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r ${m.tone}`}>{m.value}</p>
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mt-1.5">{m.label}</p>
+            </div>
+          ))}
         </div>
 
         {/* Premium Test Series Catalog Showcase (Core mocktest.club feature) */}
@@ -362,12 +330,9 @@ export default function Home() {
 
                   {/* Body Content */}
                   <div className="p-6 space-y-6">
-                    <div className="grid grid-cols-2 gap-3 text-xs font-semibold text-slate-300">
+                    <div className="grid grid-cols-1 gap-3 text-xs font-semibold text-slate-300">
                       <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5 flex items-center gap-2">
                         <span>📝</span> {test.testsCount}
-                      </div>
-                      <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5 flex items-center gap-2">
-                        <span>👥</span> {test.enrolled}
                       </div>
                     </div>
 
@@ -721,7 +686,7 @@ export default function Home() {
               Simple 4-Step Workflow
             </span>
             <h2 className="text-3xl sm:text-5xl font-black text-white tracking-tight mt-3">
-              How You Achieve 99%+ Percentile
+              How It Works
             </h2>
           </div>
 
@@ -736,46 +701,6 @@ export default function Home() {
                 <span className={`text-4xl font-black ${st.color} opacity-40`}>{st.step}</span>
                 <h3 className="text-lg font-bold text-white">{st.title}</h3>
                 <p className="text-xs text-slate-400 leading-relaxed">{st.desc}</p>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        {/* Student Testimonials */}
-        <section id="reviews" className="my-24">
-          <div className="text-center mb-16">
-            <span className="px-3.5 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-bold uppercase tracking-wider">
-              Verified Aspirant Feedback
-            </span>
-            <h2 className="text-3xl sm:text-5xl font-black text-white tracking-tight mt-3">
-              Loved by Top Rankers
-            </h2>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-6xl mx-auto">
-            {testimonials.map((t, i) => (
-              <div key={i} className="p-8 rounded-3xl bg-slate-900/60 border border-white/10 backdrop-blur-xl flex flex-col justify-between space-y-6 text-left hover:border-blue-500/40 transition-all">
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex text-amber-400 text-sm">★★★★★</div>
-                    <span className="px-2.5 py-1 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30 text-[10px] font-bold uppercase">
-                      {t.rankBadge}
-                    </span>
-                  </div>
-                  <p className="text-slate-300 text-xs sm:text-sm leading-relaxed italic">
-                    "{t.text}"
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-3 pt-4 border-t border-white/10">
-                  <div className="w-10 h-10 rounded-full bg-slate-800 border border-white/10 flex items-center justify-center text-xl">
-                    {t.avatar}
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-white text-sm">{t.name}</h4>
-                    <p className="text-[11px] text-slate-400">{t.exam} • {t.date}</p>
-                  </div>
-                </div>
               </div>
             ))}
           </div>
@@ -818,7 +743,7 @@ export default function Home() {
               Ready to Crack Your Competitive Exam?
             </h2>
             <p className="text-slate-300 text-sm sm:text-base leading-relaxed">
-              Join 15,000+ medical and engineering aspirants practicing on Astra Exam Platform today. Get instant access to full length CBT & OMR mock tests.
+              Practise on the same kind of screen you'll see on exam day, with full-length CBT & OMR mock tests and instant, detailed results.
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
               <Link href="/login">

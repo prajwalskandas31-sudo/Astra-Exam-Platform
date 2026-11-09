@@ -43,9 +43,29 @@ new folder in `prisma/migrations`. Every deploy runs `prisma migrate deploy` aga
 | `NEXTAUTH_URL` | production | public base URL used in WhatsApp/SMS links |
 | `CRON_SECRET` | production | protects the weekly digest cron endpoint |
 | `GEMINI_API_KEY` | optional | AI extraction of questions from PDFs |
+| `LOGIN_IP_LIMIT` | optional | sign-ins allowed per IP per 15 minutes (default 2000) |
+| `NEXT_PUBLIC_SHOW_DEMO_LOGINS` | development / preview only | `true` shows the quick-fill demo login buttons; leave unset in production |
 
 WhatsApp/SMS credentials are not environment variables: each institute enters its own in Admin → WhatsApp & SMS
 (stored encrypted).
+
+### How institutes and students join
+
+- **Institutes sign themselves up** at `/register-institute` (also linked from the landing page and login page).
+  This creates the institute and its first admin, who lands on a setup checklist: branding → batches →
+  students → questions → first test → WhatsApp/SMS → first result.
+- **Students and parents join with the institute's link** (`/join/<code>`), shown on the admin and mentor
+  dashboards with Copy and *Share on WhatsApp* buttons. Admins can issue a new link, which disables the old one.
+  Signing up without a code only works when the deployment has exactly one real institute.
+- Admins can still bulk-import students from CSV (Admin → Users).
+
+### Compliance
+
+- **Audit Log** (Admin → Audit Log): who created, changed or deleted users, tests, questions, batches,
+  branding and messaging settings, with time and IP.
+- **DPDP Act rights** (Settings → Your data & privacy): every user can download all their data as JSON and
+  delete their account (password required; an institute's last admin can't delete themselves).
+- Backups: Neon keeps point-in-time restore history (check the retention window on your plan before launch).
 
 ### First admin in a new database
 
@@ -86,6 +106,36 @@ New sign-ups: students and parents are active immediately; mentor sign-ups wait 
 - Merging into `main` deploys production on Vercel (Singapore region, next to the database). PRs get preview deployments
   backed by the dev database.
 - The weekly parent/student digest runs every Monday 09:00 IST via Vercel Cron (`vercel.json`).
+- `GET /api/health` returns 200 when the app can reach Postgres and 503 otherwise. Point an uptime monitor at it.
+
+## Running large exams
+
+The exam path is built for a whole institute sitting the same paper at once:
+
+- **Autosave sends only what changed** since the last successful save, every ~15 s with random spread, and the
+  server writes the batch in one SQL statement. 1,000 students produce ~65 small requests per second, not
+  thousands of row writes.
+- **Submit carries the final answers**, is retried by the browser with exponential backoff (network errors,
+  5xx, 429), and is idempotent: the attempt row is locked, graded once, and later calls return the same result.
+  Autosaves that arrive after grading, or after the deadline plus a 60 s grace, are rejected.
+- **The paper is cached** per server instance for 30 s, so a batch opening the exam at 10:00:00 shares one query.
+- **Indexes** cover every foreign key and hot lookup (attempts by user/test, answers, ranks).
+- **Throttling** (Postgres-backed, shared by all instances): 10 wrong passwords per account per 15 min,
+  2,000 sign-ins per IP per 15 min (exam halls share an IP; override with `LOGIN_IP_LIMIT`), and caps on
+  sign-up and password-reset codes.
+
+### Load testing
+
+Run it against a dev or staging database, never production:
+
+```bash
+LOADTEST_PASSWORD=<pw> npm run load:seed -- --students 1000 --confirm   # isolated "astra-loadtest" tenant
+BASE_URL=https://<preview-url> LOADTEST_PASSWORD=<pw> npm run load:test -- --users 1000
+LOADTEST_PASSWORD=<pw> npm run load:seed -- --remove --confirm          # clean up
+```
+
+Each simulated student signs in, opens the 180-question paper, autosaves 4 times and submits. The script
+prints p50/p95/p99 latency and errors per step.
 
 ## Messaging
 

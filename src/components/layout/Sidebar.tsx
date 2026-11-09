@@ -24,6 +24,7 @@ import {
   Building2,
   Layers,
   Send,
+  ScrollText,
   CreditCard,
   ClipboardList,
   Menu,
@@ -143,6 +144,7 @@ const ADMIN_NAV: NavGroup[] = [
     items: [
       { label: "WhatsApp & SMS", href: "/admin/messaging", icon: MessageSquare },
       { label: "Notification Logs", href: "/admin/notifications", icon: Send },
+      { label: "Audit Log", href: "/admin/audit-log", icon: ScrollText },
       { label: "Settings", href: "/admin/settings", icon: Settings },
     ],
   },

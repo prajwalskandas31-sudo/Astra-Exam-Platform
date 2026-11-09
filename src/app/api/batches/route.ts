@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireRole, tenantWhere } from "@/lib/api";
+import { audit } from "@/lib/audit";
 import { ADMIN_ROLES, STAFF_ROLES } from "@/lib/roles";
 
 export async function GET() {
@@ -52,6 +53,7 @@ export async function POST(request: Request) {
     if (dup) return NextResponse.json({ error: "A batch with this name already exists" }, { status: 409 });
 
     const batch = await prisma.batch.create({ data: { name: clean, organizationId } });
+    await audit(session, { action: "batch.create", targetType: "Batch", targetId: batch.id, summary: `Created batch "${batch.name}"` }, request);
     return NextResponse.json(batch);
   } catch (error) {
     console.error("[BATCHES_POST]", error);
@@ -72,6 +74,7 @@ export async function DELETE(request: Request) {
 
     // Students keep their accounts; their batch is cleared (onDelete: SetNull)
     await prisma.batch.delete({ where: { id } });
+    await audit(session, { action: "batch.delete", targetType: "Batch", targetId: id, summary: `Deleted batch "${batch.name}"` }, request);
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("[BATCHES_DELETE]", error);

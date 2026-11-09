@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireRole, tenantWhere } from "@/lib/api";
+import { audit } from "@/lib/audit";
 import { STAFF_ROLES } from "@/lib/roles";
 import { normalizeQuestion } from "@/lib/questions";
 
@@ -26,6 +27,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     if (!data) return NextResponse.json({ error: validationError }, { status: 400 });
 
     const updated = await prisma.question.update({ where: { id }, data });
+    await audit(session, { action: "question.update", targetType: "Question", targetId: id, summary: `Edited a ${updated.subject} question${existing.correctOption !== updated.correctOption ? " (answer key changed)" : ""}` }, request);
     return NextResponse.json({ success: true, question: updated });
   } catch (error) {
     console.error("[QUESTION_PATCH_ERROR]", error);
@@ -47,10 +49,12 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
     if (answered > 0) {
       // Keep history intact: retire the question instead of deleting graded answers
       await prisma.question.update({ where: { id }, data: { status: "DRAFT" } });
+      await audit(session, { action: "question.archive", targetType: "Question", targetId: id, summary: "Retired a question that students had answered" }, _request);
       return NextResponse.json({ success: true, archived: true });
     }
 
     await prisma.question.delete({ where: { id } });
+    await audit(session, { action: "question.delete", targetType: "Question", targetId: id, summary: `Deleted a ${existing.subject} question` }, _request);
     return NextResponse.json({ success: true, archived: false });
   } catch (error) {
     console.error("[QUESTION_DELETE_ERROR]", error);

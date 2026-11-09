@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { jsonError, requireRole, tenantWhere } from "@/lib/api";
+import { audit } from "@/lib/audit";
 import { STAFF_ROLES } from "@/lib/roles";
 
 /** Staff: resolve or dismiss a report. Body: { status: "RESOLVED" | "DISMISSED" | "OPEN", resolution? } */
@@ -24,6 +25,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       data: { status: body.status, resolution, resolvedAt: reopening ? null : new Date() },
     });
 
+    await audit(session, { action: "questionReport.resolve", targetType: "QuestionReport", targetId: id, summary: `Marked ${count} report(s) as resolved/dismissed` }, request);
     return NextResponse.json({ success: true, updated: count });
   } catch (error) {
     console.error("[QUESTION_REPORT_PATCH]", error);

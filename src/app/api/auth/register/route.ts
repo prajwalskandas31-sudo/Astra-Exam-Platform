@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
-import bcrypt from "bcryptjs";
+// Native bcrypt: runs on the libuv thread pool, so a login rush does not block the event loop
+import * as bcrypt from "@node-rs/bcrypt";
 import { prisma } from "@/lib/prisma";
+import { clientIp, rateLimit, tooManyRequests } from "@/lib/rateLimit";
+import { resolveSignupOrganization } from "@/lib/institutes";
 
 // Public sign-up: students and parents are active immediately, mentors wait for admin approval.
 // Admin roles can only be granted by an existing admin.
@@ -11,6 +14,9 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export async function POST(request: Request) {
   try {
+    const limited = await rateLimit(`register:ip:${clientIp(request.headers)}`, 30, 60 * 60);
+    if (!limited.ok) return tooManyRequests(limited.retryAfter, "Too many sign-ups from this network. Please try again later.");
+
     const body = await request.json();
     const name = typeof body.name === "string" ? body.name.trim() : "";
     const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
@@ -33,8 +39,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "An account with this email already exists" }, { status: 409 });
     }
 
-    // Single-institute deployments: attach new accounts to the default (oldest) organization
-    const defaultOrg = await prisma.organization.findFirst({ orderBy: { createdAt: "asc" }, select: { id: true } });
+    // Join the institute named by the join code (from the /join/<code> link or typed in)
+    const org = await resolveSignupOrganization(body.joinCode);
+    if ("error" in org) return NextResponse.json({ error: org.error, needsJoinCode: true }, { status: 400 });
 
     const user = await prisma.user.create({
       data: {
@@ -44,7 +51,7 @@ export async function POST(request: Request) {
         password: await bcrypt.hash(password, 10),
         role,
         status: role === "MENTOR" ? "PENDING" : "APPROVED",
-        organizationId: defaultOrg?.id ?? null
+        organizationId: org.id
       }
     });
 

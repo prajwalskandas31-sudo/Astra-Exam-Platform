@@ -35,6 +35,35 @@ interface AttemptResponse {
   };
 }
 
+const SUBMIT_RETRY_DELAYS_MS = [1000, 2000, 4000, 8000, 15000, 15000, 15000, 15000];
+
+/**
+ * POST the submission, retrying network errors, 5xx, 408 and 429 with exponential backoff and jitter
+ * (honouring Retry-After), so a busy server at the end of a large exam drains instead of being
+ * hammered. Submitting twice is safe: the server returns the already-graded attempt.
+ */
+async function submitWithRetry(url: string, body: unknown, onRetry: (attempt: number) => void): Promise<void> {
+  const payload = JSON.stringify(body);
+  for (let i = 0; ; i++) {
+    let retryable = true;
+    let message = "Submit failed";
+    let retryAfterMs = 0;
+    try {
+      const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: payload });
+      if (res.ok) return;
+      message = (await res.json().catch(() => null))?.error || message;
+      retryable = res.status >= 500 || res.status === 408 || res.status === 429;
+      retryAfterMs = Number(res.headers.get("Retry-After")) * 1000 || 0;
+    } catch {
+      message = "Network error";
+    }
+    if (!retryable || i >= SUBMIT_RETRY_DELAYS_MS.length) throw new Error(message);
+    onRetry(i + 1);
+    const base = Math.max(SUBMIT_RETRY_DELAYS_MS[i], retryAfterMs);
+    await new Promise((r) => setTimeout(r, base * (0.5 + Math.random())));
+  }
+}
+
 function parseOptions(raw: string): { id: string; text: string }[] {
   try {
     const parsed = JSON.parse(raw);
@@ -69,7 +98,7 @@ export default function ExamPage({ params }: { params: Promise<{ attemptId: stri
 
   const isCbt = mode === "CBT";
   const { enterFullscreen, isFullscreen, maxViolations } = useProctoring(hasStarted && isCbt && !isSubmitting);
-  const { sync, syncState } = useAutosave(hasStarted);
+  const { syncState } = useAutosave(hasStarted);
 
   // Load the attempt and hydrate any saved progress
   useEffect(() => {
@@ -176,26 +205,32 @@ export default function ExamPage({ params }: { params: Promise<{ attemptId: stri
     submitting.current = true;
     setConfirmOpen(false);
     (async () => {
-      await sync();
+      // The final answers travel with the submit itself, so nothing depends on the last autosave
+      const { answers } = useExamStore.getState();
       try {
-        const res = await fetch(`/api/attempts/${attemptId}/submit`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ reason: submitReason }),
-        });
-        if (!res.ok) throw new Error((await res.json().catch(() => null))?.error || "Submit failed");
+        localStorage.setItem(`backup_${attemptId}`, JSON.stringify({ answers, savedAt: Date.now() }));
+      } catch {}
+      try {
+        await submitWithRetry(`/api/attempts/${attemptId}/submit`, { reason: submitReason, answers: Object.values(answers) }, (n) =>
+          toast.loading(`The server is busy — retrying your submission (${n})… Your answers are safe.`, { id: "submit-retry" })
+        );
+        toast.dismiss("submit-retry");
         try {
           localStorage.removeItem(`backup_${attemptId}`);
         } catch {}
         if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
         router.replace(`/exam/${attemptId}/results`);
       } catch (e) {
+        toast.dismiss("submit-retry");
+        // At 00:00 the timer re-triggers submit as soon as this one is cancelled; pause first so
+        // a persistent failure can't turn into a tight request loop
+        if (submitReason === "TIMEOUT") await new Promise((r) => setTimeout(r, 10_000));
         submitting.current = false;
         cancelSubmit();
-        toast.error(`${e instanceof Error ? e.message : "Submit failed"}. Your answers are saved — please try again.`);
+        toast.error(`${e instanceof Error ? e.message : "Submit failed"}. Your answers are saved on this device — please try again.`);
       }
     })();
-  }, [isSubmitting, submitReason, attemptId, router, sync, cancelSubmit]);
+  }, [isSubmitting, submitReason, attemptId, router, cancelSubmit]);
 
   const toggleBookmark = useCallback(async (questionId: string) => {
     const was = bookmarks.has(questionId);

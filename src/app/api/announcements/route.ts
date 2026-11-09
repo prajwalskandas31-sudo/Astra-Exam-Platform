@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireRole, tenantOrGlobalWhere } from "@/lib/api";
+import { audit } from "@/lib/audit";
 import { STAFF_ROLES, isAdmin } from "@/lib/roles";
 
 const AUDIENCES = ["ALL", "STUDENTS", "PARENTS"] as const;
@@ -54,6 +55,7 @@ export async function POST(request: Request) {
       include: { author: { select: { name: true, role: true } } }
     });
 
+    await audit(session, { action: "announcement.create", targetType: "Announcement", targetId: announcement.id, summary: `Posted "${announcement.title}"` }, request);
     return NextResponse.json(announcement);
   } catch (error) {
     console.error("[ANNOUNCEMENTS_POST]", error);
@@ -77,6 +79,7 @@ export async function DELETE(request: Request) {
     if (!canDelete) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     await prisma.announcement.delete({ where: { id } });
+    await audit(session, { action: "announcement.delete", targetType: "Announcement", targetId: id, summary: `Deleted "${existing!.title}"` }, request);
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("[ANNOUNCEMENTS_DELETE]", error);

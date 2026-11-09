@@ -1,8 +1,10 @@
 import crypto from "crypto";
-import bcrypt from "bcryptjs";
+// Native bcrypt: runs on the libuv thread pool, so a login rush does not block the event loop
+import * as bcrypt from "@node-rs/bcrypt";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { jsonError, requireRole } from "@/lib/api";
+import { audit } from "@/lib/audit";
 import { ADMIN_ROLES } from "@/lib/roles";
 
 const MAX_ROWS = 2000;
@@ -156,6 +158,9 @@ export async function POST(request: Request) {
       }
     }
 
+    if (!dryRun) {
+      await audit(session, { action: "user.import", targetType: "User", summary: `CSV import: ${results.filter((r) => r.status === "created").length} created, ${results.filter((r) => r.status === "updated").length} updated, ${results.filter((r) => r.status === "error").length} errors` }, request);
+    }
     return NextResponse.json({
       dryRun,
       summary: {

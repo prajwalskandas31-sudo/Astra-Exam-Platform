@@ -26,9 +26,19 @@ export function SessionGuard({ children }: { children: React.ReactNode }) {
       }
     };
 
-    const interval = setInterval(checkSession, 30000);
+    // Every open tab polls, so keep this light: once a minute while visible, plus on return to the tab
+    const interval = setInterval(() => {
+      if (document.visibilityState === "visible") checkSession();
+    }, 60000 * (0.9 + Math.random() * 0.2));
+    const onVisible = () => {
+      if (document.visibilityState === "visible") checkSession();
+    };
+    document.addEventListener("visibilitychange", onVisible);
     checkSession();
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [sessionId]);
 
   return <>{children}</>;

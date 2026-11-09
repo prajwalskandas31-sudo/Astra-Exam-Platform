@@ -1,8 +1,12 @@
 import { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
-import bcrypt from "bcryptjs";
+// Native bcrypt: runs on the libuv thread pool, so a login rush does not block the event loop
+import * as bcrypt from "@node-rs/bcrypt";
 import crypto from "crypto";
 import { prisma } from "./prisma";
+import { clientIp, isRateLimited, rateLimit } from "./rateLimit";
+
+const LOGIN_FAILURES_ALLOWED = 10;
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -12,18 +16,33 @@ export const authOptions: NextAuthOptions = {
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" }
       },
-      async authorize(credentials) {
+      async authorize(credentials, req) {
         if (!credentials?.email || !credentials?.password) {
           return null;
         }
+        const email = credentials.email.trim().toLowerCase();
+
+        // Brute-force protection: 10 wrong passwords per account per 15 minutes, plus a per-IP
+        // cap that is generous because a whole classroom or exam centre often shares one IP.
+        const emailKey = `login:fail:${email}`;
+        const ip = clientIp(req?.headers);
+        const [emailLocked, byIp] = await Promise.all([
+          isRateLimited(emailKey, LOGIN_FAILURES_ALLOWED),
+          rateLimit(`login:ip:${ip}`, Number(process.env.LOGIN_IP_LIMIT) || 2000, 15 * 60),
+        ]);
+        if (emailLocked || !byIp.ok) throw new Error("TooManyAttempts");
+        const failed = async () => {
+          await rateLimit(emailKey, LOGIN_FAILURES_ALLOWED, 15 * 60);
+          return null;
+        };
 
         const user = await prisma.user.findUnique({
-          where: { email: credentials.email.trim().toLowerCase() }
+          where: { email }
         });
-        if (!user) return null;
+        if (!user) return failed();
 
         const isPasswordValid = await bcrypt.compare(credentials.password, user.password);
-        if (!isPasswordValid) return null;
+        if (!isPasswordValid) return failed();
 
         // Surface a distinct error so the login page can explain pending/rejected accounts
         if (user.status === "PENDING") throw new Error("AccountPending");

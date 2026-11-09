@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useSession } from "next-auth/react";
+import { signOut, useSession } from "next-auth/react";
 import { toast } from "sonner";
-import { Bell, KeyRound, UserRound } from "lucide-react";
-import { Badge, Btn, Card, CardHeader, ErrorState, Field, PageLoader, inputClass } from "@/components/ui/kit";
+import { Bell, Download, KeyRound, ShieldCheck, Trash2, UserRound } from "lucide-react";
+import { Badge, Btn, Card, CardHeader, ErrorState, Field, Modal, PageLoader, inputClass } from "@/components/ui/kit";
 import { apiFetch, useApi } from "@/lib/fetcher";
 import { ROLE_LABELS, type AppRole } from "@/lib/roles";
 
@@ -150,6 +150,8 @@ export function ProfileSettings() {
           </div>
         </Card>
 
+        <PrivacyCard role={data.role} />
+
         {data.role === "STUDENT" && (
           <Card>
             <CardHeader title="Exams you're preparing for" description="Used to personalise your dashboard." />
@@ -175,5 +177,58 @@ export function ProfileSettings() {
         )}
       </div>
     </div>
+  );
+}
+
+/** DPDP Act rights: download a copy of your data, or delete your account. */
+function PrivacyCard({ role }: { role: AppRole }) {
+  const [open, setOpen] = useState(false);
+  const [password, setPassword] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const canSelfDelete = role !== "SUPER_ADMIN";
+
+  const deleteAccount = async () => {
+    setDeleting(true);
+    try {
+      await apiFetch("/api/profile", { method: "DELETE", json: { password } });
+      toast.success("Your account has been deleted.");
+      await signOut({ callbackUrl: "/login" });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't delete the account");
+      setDeleting(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader title="Your data & privacy" icon={ShieldCheck} description="Under India's DPDP Act you can get a copy of your data or have it erased." />
+      <div className="flex flex-wrap gap-2 p-5">
+        <a href="/api/profile/export" download>
+          <Btn variant="secondary" size="sm"><Download className="h-4 w-4" />Download my data</Btn>
+        </a>
+        {canSelfDelete && (
+          <Btn variant="ghost" size="sm" className="text-rose-300 hover:text-rose-200" onClick={() => setOpen(true)}>
+            <Trash2 className="h-4 w-4" />Delete my account
+          </Btn>
+        )}
+      </div>
+      <Modal
+        open={open}
+        onClose={() => !deleting && setOpen(false)}
+        size="sm"
+        title="Delete your account?"
+        description="This permanently removes your profile, test results, answers, bookmarks and review queue. It can't be undone."
+        footer={
+          <>
+            <Btn variant="secondary" onClick={() => setOpen(false)} disabled={deleting}>Cancel</Btn>
+            <Btn variant="danger" loading={deleting} disabled={!password} onClick={deleteAccount}>Delete permanently</Btn>
+          </>
+        }
+      >
+        <Field label="Enter your password to confirm">
+          <input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} className={inputClass} />
+        </Field>
+      </Modal>
+    </Card>
   );
 }

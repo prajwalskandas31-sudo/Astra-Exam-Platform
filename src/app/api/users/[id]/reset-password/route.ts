@@ -1,8 +1,10 @@
 import crypto from "crypto";
-import bcrypt from "bcryptjs";
+// Native bcrypt: runs on the libuv thread pool, so a login rush does not block the event loop
+import * as bcrypt from "@node-rs/bcrypt";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { jsonError, requireRole, tenantWhere } from "@/lib/api";
+import { audit } from "@/lib/audit";
 import { ADMIN_ROLES } from "@/lib/roles";
 
 const ALPHABET = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -24,6 +26,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
       where: { id: target.id },
       data: { password: await bcrypt.hash(temporaryPassword, 10), sessionId: crypto.randomUUID() },
     });
+    await audit(session, { action: "user.resetPassword", targetType: "User", targetId: target.id, summary: `Reset the password of ${target.email}` }, _request);
     return NextResponse.json({ email: target.email, temporaryPassword });
   } catch (error) {
     console.error("[USER_RESET_PASSWORD]", error);
