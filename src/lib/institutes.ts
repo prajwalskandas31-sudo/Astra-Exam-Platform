@@ -1,6 +1,10 @@
 import crypto from "crypto";
 import { prisma } from "./prisma";
 
+/** Student / roll ID as stored: trimmed, upper-case, letters, digits and - / _ . only. */
+export const normalizeStudentCode = (v: unknown) =>
+  typeof v === "string" ? v.trim().toUpperCase().replace(/[^A-Z0-9/_.\-]/g, "").slice(0, 32) || null : null;
+
 // No look-alikes (0/O, 1/I/L) so a code read out in class or typed from WhatsApp is unambiguous
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 

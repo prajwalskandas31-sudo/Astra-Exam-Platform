@@ -73,9 +73,27 @@ export async function PATCH(request: Request) {
       data.offeredCategories = JSON.stringify(body.offeredCategories.filter((c: unknown) => typeof c === "string").slice(0, 30));
     }
 
+    // Opt-in exam modes. Offline exams build on Exam Centre mode, so they switch together.
+    if (typeof body.examCentreEnabled === "boolean") {
+      data.examCentreEnabled = body.examCentreEnabled;
+      if (!body.examCentreEnabled) data.offlineExamsEnabled = false;
+    }
+    if (typeof body.offlineExamsEnabled === "boolean") {
+      data.offlineExamsEnabled = body.offlineExamsEnabled;
+      if (body.offlineExamsEnabled) data.examCentreEnabled = true;
+    }
+
     const updated = await prisma.organization.update({ where: { id: org.id }, data });
     const { whatsappConfig: _w, ...rest } = updated;
-    await audit(session, { action: "organization.update", targetType: "Organization", targetId: updated.id, summary: "Updated institute branding/details" }, request);
+    const modes = ["examCentreEnabled", "offlineExamsEnabled"].filter((k) => k in data && data[k] !== org[k as keyof typeof org]);
+    await audit(session, {
+      action: modes.length ? "organization.exam_modes" : "organization.update",
+      targetType: "Organization",
+      targetId: updated.id,
+      summary: modes.length
+        ? `Exam Centre mode ${updated.examCentreEnabled ? "on" : "off"}, offline exams ${updated.offlineExamsEnabled ? "on" : "off"}`
+        : "Updated institute branding/details",
+    }, request);
     return NextResponse.json({ ...rest, offeredCategories: safeJson<string[]>(updated.offeredCategories, []) });
   } catch (error) {
     console.error("[ORG_PATCH]", error);

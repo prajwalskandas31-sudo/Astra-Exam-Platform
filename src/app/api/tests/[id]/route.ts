@@ -5,6 +5,8 @@ import { audit } from "@/lib/audit";
 import { STAFF_ROLES } from "@/lib/roles";
 import { appBaseUrl } from "@/lib/reportLinks";
 import { sendTestAssigned } from "@/lib/messaging/automations";
+import { examSettingsFromBody, instituteExamModes } from "@/lib/examSettings";
+import { reseatSetIndex } from "@/lib/examCentre";
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -12,7 +14,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     if (error) return error;
     const { id } = await params;
 
-    const existing = await prisma.test.findFirst({ where: { id, ownerId: null, ...tenantWhere(session) } });
+    const existing = await prisma.test.findFirst({ where: { id, ownerId: null, ...tenantWhere(session) }, omit: { startCode: false } });
     if (!existing) return NextResponse.json({ error: "Test not found" }, { status: 404 });
 
     const body = await request.json();
@@ -35,6 +37,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       data.status = body.isPublished ? "ACTIVE" : "DRAFT";
     }
 
+    Object.assign(data, examSettingsFromBody(body, await instituteExamModes(session.user.organizationId), existing));
+
     if (Array.isArray(body.batchIds)) {
       const batchIds = [...new Set(body.batchIds.filter((b: unknown): b is string => typeof b === "string"))] as string[];
       const found = await prisma.batch.count({ where: { id: { in: batchIds }, ...tenantWhere(session) } });
@@ -43,6 +47,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     }
 
     const test = await prisma.test.update({ where: { id }, data });
+    // Seats keep neighbours on different sets when the number of sets changes
+    if (test.setCount !== existing.setCount) {
+      const seats = await prisma.examSeat.findMany({ where: { testId: id } });
+      await prisma.$transaction(seats.map((s) => prisma.examSeat.update({ where: { id: s.id }, data: { setIndex: reseatSetIndex(s.row, s.col, test.setCount) } })));
+    }
     // Announce the test only when it goes from hidden to published
     if (!existing.isPublished && test.isPublished) {
       const baseUrl = appBaseUrl(request);

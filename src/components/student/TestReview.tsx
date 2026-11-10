@@ -37,7 +37,7 @@ interface ReviewAttempt {
 
 type Filter = "all" | "incorrect" | "unanswered" | "correct";
 
-function parseOptions(raw: string): { id: string; text: string }[] {
+function parseOptions(raw: string): { id: string; text: string; label?: string }[] {
   try {
     const v = JSON.parse(raw);
     return Array.isArray(v) ? v : [];
@@ -211,7 +211,7 @@ export function TestReview({ attemptId, onClose, embedded = false, allowBookmark
                             !isCor && !isSel && "border-white/[0.06] text-slate-400"
                           )}
                         >
-                          <span className="font-bold">{opt.id}.</span>
+                          <span className="font-bold">{opt.label ?? opt.id}.</span>
                           <span className="flex-1">{opt.text}</span>
                           {isSel && <span className="text-[10px] font-semibold uppercase">You</span>}
                         </div>

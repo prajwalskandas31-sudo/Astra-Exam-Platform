@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { jsonError, requireRole } from "@/lib/api";
 import { audit } from "@/lib/audit";
 import { ADMIN_ROLES } from "@/lib/roles";
+import { normalizeStudentCode } from "@/lib/institutes";
 
 const MAX_ROWS = 2000;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -13,6 +14,7 @@ const ALPHABET = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const tempPassword = () => Array.from(crypto.randomBytes(10), (b) => ALPHABET[b % ALPHABET.length]).join("");
 
 interface Row {
+  studentCode?: string;
   name?: string;
   email?: string;
   phone?: string;
@@ -59,6 +61,12 @@ export async function POST(request: Request) {
       (await prisma.user.findMany({ where: { email: { in: [...emails] } }, select: { id: true, email: true, role: true, organizationId: true } }))
         .map((u) => [u.email, u])
     );
+    // Student IDs already taken in this institute (and by whom), so clashes are caught before saving
+    const takenCodes = new Map(
+      (await prisma.user.findMany({ where: { organizationId: orgId, studentCode: { not: null } }, select: { studentCode: true, email: true } }))
+        .map((u) => [u.studentCode!, u.email])
+    );
+    const seenCodes = new Set<string>();
     const batches = new Map((await prisma.batch.findMany({ where: { organizationId: orgId }, select: { id: true, name: true } })).map((b) => [b.name.toLowerCase(), b]));
 
     const results: RowResult[] = [];
@@ -77,6 +85,13 @@ export async function POST(request: Request) {
       if (!name || !EMAIL.test(email)) { fail("Name and a valid email are required"); continue; }
       if (seen.has(email)) { fail("Duplicate email in this file"); continue; }
       seen.add(email);
+      const studentCode = normalizeStudentCode(raw.studentCode);
+      if (studentCode) {
+        if (seenCodes.has(studentCode)) { fail(`Student ID ${studentCode} appears twice in this file`); continue; }
+        const owner = takenCodes.get(studentCode);
+        if (owner && owner !== email) { fail(`Student ID ${studentCode} already belongs to ${owner}`); continue; }
+        seenCodes.add(studentCode);
+      }
 
       const student = existing.get(email);
       if (student && (student.organizationId !== orgId || student.role !== "STUDENT")) {
@@ -114,13 +129,13 @@ export async function POST(request: Request) {
         if (student) {
           await prisma.user.update({
             where: { id: student.id },
-            data: { ...(clean(raw.phone) ? { phone: clean(raw.phone, 30) } : {}), ...(batchId ? { batchId } : {}) },
+            data: { ...(clean(raw.phone) ? { phone: clean(raw.phone, 30) } : {}), ...(batchId ? { batchId } : {}), ...(studentCode ? { studentCode } : {}) },
           });
           studentId = student.id;
         } else {
           const password = tempPassword();
           const created = await prisma.user.create({
-            data: { name, email, phone: clean(raw.phone, 30) || null, password: await bcrypt.hash(password, 10), role: "STUDENT", status: "APPROVED", organizationId: orgId, batchId: batchId ?? null },
+            data: { name, email, studentCode, phone: clean(raw.phone, 30) || null, password: await bcrypt.hash(password, 10), role: "STUDENT", status: "APPROVED", organizationId: orgId, batchId: batchId ?? null },
             select: { id: true, email: true, role: true, organizationId: true },
           });
           existing.set(email, created);

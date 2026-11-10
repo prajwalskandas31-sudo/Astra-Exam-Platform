@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requireRole, tenantWhere } from "@/lib/api";
 import { audit } from "@/lib/audit";
 import { ADMIN_ROLES, ROLES } from "@/lib/roles";
+import { normalizeStudentCode } from "@/lib/institutes";
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -26,6 +27,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
     if (typeof body.name === "string" && body.name.trim()) data.name = body.name.trim();
     if (typeof body.phone === "string") data.phone = body.phone.trim() || null;
+    if (typeof body.studentCode === "string") {
+      const code = normalizeStudentCode(body.studentCode);
+      if (code) {
+        const clash = await prisma.user.findFirst({ where: { organizationId: target.organizationId, studentCode: code, id: { not: id } }, select: { email: true } });
+        if (clash) return NextResponse.json({ error: `Student ID ${code} already belongs to ${clash.email}` }, { status: 409 });
+      }
+      data.studentCode = code;
+    }
     if (body.status === "APPROVED" || body.status === "REJECTED" || body.status === "PENDING") data.status = body.status;
     if (body.batchId === null || typeof body.batchId === "string") {
       if (body.batchId) {
@@ -47,7 +56,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const user = await prisma.user.update({
       where: { id },
       data,
-      select: { id: true, name: true, email: true, phone: true, role: true, status: true, batchId: true }
+      select: { id: true, name: true, email: true, phone: true, studentCode: true, role: true, status: true, batchId: true }
     });
     await audit(session, { action: "user.update", targetType: "User", targetId: id, summary: `Updated ${target.email}: ${Object.keys(data).join(", ")}` }, request);
     return NextResponse.json(user);
