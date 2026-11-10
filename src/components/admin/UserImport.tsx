@@ -7,11 +7,13 @@ import { Badge, Btn, Modal, inputClass } from "@/components/ui/kit";
 import { apiFetch } from "@/lib/fetcher";
 import { parseCsv } from "@/lib/csv";
 
-const TEMPLATE = "name,email,phone,batch,parent_name,parent_email,parent_phone\nPriya Sharma,priya@example.com,9876543210,PLAB Jan 2027,Anil Sharma,anil@example.com,9812345678\n";
+const TEMPLATE = "student_id,name,email,phone,batch,parent_name,parent_email,parent_phone\n2027-PL-014,Priya Sharma,priya@example.com,9876543210,PLAB Jan 2027,Anil Sharma,anil@example.com,9812345678\n";
 
 // Header aliases → field, so "Student Name", "Parent Mobile" etc. all work
 const HEADERS: Record<string, string> = {
   name: "name", studentname: "name", fullname: "name",
+  studentid: "studentCode", studentcode: "studentCode", rollno: "studentCode", rollnumber: "studentCode",
+  admissionno: "studentCode", admissionnumber: "studentCode", enrollmentno: "studentCode", enrolmentno: "studentCode", regno: "studentCode",
   email: "email", studentemail: "email",
   phone: "phone", mobile: "phone", studentphone: "phone", studentmobile: "phone",
   batch: "batch", batchname: "batch",

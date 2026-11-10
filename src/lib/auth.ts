@@ -5,6 +5,28 @@ import * as bcrypt from "@node-rs/bcrypt";
 import crypto from "crypto";
 import { prisma } from "./prisma";
 import { clientIp, isRateLimited, rateLimit } from "./rateLimit";
+import { normalizeStudentCode } from "./institutes";
+
+/**
+ * Students can sign in with their institute's student ID instead of an email. IDs are unique
+ * only within an institute, so when the same ID exists at two institutes the student is asked
+ * for their institute code (join code or the institute's short name).
+ */
+async function findStudentById(identifier: string, institute?: string) {
+  const code = normalizeStudentCode(identifier);
+  if (!code) return null;
+  const inst = institute?.trim();
+  const students = await prisma.user.findMany({
+    where: {
+      studentCode: code,
+      role: "STUDENT",
+      ...(inst ? { organization: { OR: [{ joinCode: inst.toUpperCase().replace(/[^A-Z0-9]/g, "") }, { slug: inst.toLowerCase() }] } } : {}),
+    },
+    take: 2,
+  });
+  if (students.length > 1) throw new Error("InstituteRequired");
+  return students[0] ?? null;
+}
 
 const LOGIN_FAILURES_ALLOWED = 10;
 
@@ -14,7 +36,8 @@ export const authOptions: NextAuthOptions = {
       name: "Credentials",
       credentials: {
         email: { label: "Email", type: "email" },
-        password: { label: "Password", type: "password" }
+        password: { label: "Password", type: "password" },
+        institute: { label: "Institute code", type: "text" }
       },
       async authorize(credentials, req) {
         if (!credentials?.email || !credentials?.password) {
@@ -36,9 +59,9 @@ export const authOptions: NextAuthOptions = {
           return null;
         };
 
-        const user = await prisma.user.findUnique({
-          where: { email }
-        });
+        const user = email.includes("@")
+          ? await prisma.user.findUnique({ where: { email } })
+          : await findStudentById(email, credentials.institute);
         if (!user) return failed();
 
         const isPasswordValid = await bcrypt.compare(credentials.password, user.password);

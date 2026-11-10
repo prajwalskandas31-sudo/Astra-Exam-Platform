@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { requireRole, tenantWhere } from "@/lib/api";
 import { audit } from "@/lib/audit";
 import { ADMIN_ROLES, ROLES, STAFF_ROLES, type AppRole } from "@/lib/roles";
+import { normalizeStudentCode } from "@/lib/institutes";
 
 export async function GET(request: Request) {
   try {
@@ -28,6 +29,7 @@ export async function GET(request: Request) {
         name: true,
         email: true,
         phone: true,
+        studentCode: true,
         role: true,
         status: true,
         createdAt: true,
@@ -84,11 +86,18 @@ export async function POST(request: Request) {
       batchId = batch.id;
     }
 
+    const studentCode = role === "STUDENT" ? normalizeStudentCode(body.studentCode) : null;
+    if (studentCode) {
+      const clash = await prisma.user.findFirst({ where: { organizationId: session.user.organizationId ?? null, studentCode }, select: { email: true } });
+      if (clash) return NextResponse.json({ error: `Student ID ${studentCode} already belongs to ${clash.email}` }, { status: 409 });
+    }
+
     const user = await prisma.user.create({
       data: {
         name,
         email,
         phone: typeof body.phone === "string" && body.phone.trim() ? body.phone.trim() : null,
+        studentCode,
         password: await bcrypt.hash(password, 10),
         role,
         status: "APPROVED",

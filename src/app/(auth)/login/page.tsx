@@ -11,6 +11,7 @@ import { toast } from "sonner";
 
 const LOGIN_ERRORS: Record<string, string> = {
   CredentialsSignin: "Invalid email or password.",
+  InstituteRequired: "That student ID is used at more than one institute. Enter your institute code too.",
   AccountPending: "Your account is awaiting approval from your institute. You'll be able to sign in once it's approved.",
   AccountRejected: "This account has been deactivated. Please contact your institute.",
   AccountDisabled: "This account has been deactivated. Please contact your institute.",
@@ -24,6 +25,11 @@ export default function LoginPage() {
   
   // Sign in fields
   const [email, setEmail] = useState("");
+  // Students can sign in with their institute's student ID instead of an email
+  const [withStudentId, setWithStudentId] = useState(false);
+  const [studentId, setStudentId] = useState("");
+  const [institute, setInstitute] = useState("");
+  const [needInstitute, setNeedInstitute] = useState(false);
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
@@ -74,13 +80,19 @@ export default function LoginPage() {
     setError("");
 
     const res = await signIn("credentials", {
-      email,
+      email: withStudentId ? studentId : email,
       password,
+      institute: withStudentId ? institute : "",
       redirect: false,
     });
 
     if (res?.error) {
-      setError(LOGIN_ERRORS[res.error] ?? LOGIN_ERRORS.CredentialsSignin);
+      if (res.error === "InstituteRequired") setNeedInstitute(true);
+      setError(
+        res.error === "CredentialsSignin" && withStudentId
+          ? "Invalid student ID or password."
+          : LOGIN_ERRORS[res.error] ?? LOGIN_ERRORS.CredentialsSignin
+      );
       setIsLoading(false);
     } else {
       const sessionRes = await fetch("/api/auth/session");
@@ -211,20 +223,58 @@ export default function LoginPage() {
           {/* SIGN IN FORM */}
           {authMode === "signin" && (
             <form onSubmit={handleSignIn} className="space-y-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-300 uppercase tracking-wider block">Email Address</label>
-                <div className="relative">
-                  <Mail className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="student@astra.com, parent@apex.com, or mentor@astra.com"
-                    required
-                    className="w-full pl-10 pr-4 py-3 bg-slate-900/80 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-blue-500 transition-colors"
-                  />
+              {withStudentId ? (
+                <div className="space-y-3">
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label htmlFor="login-student-id" className="text-xs font-bold text-slate-300 uppercase tracking-wider block">Student ID</label>
+                      <button type="button" onClick={() => setWithStudentId(false)} className="text-xs font-semibold text-blue-400 hover:text-blue-300">Use email instead</button>
+                    </div>
+                    <div className="relative">
+                      <User className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
+                      <input
+                        id="login-student-id"
+                        value={studentId}
+                        onChange={(e) => setStudentId(e.target.value)}
+                        placeholder="Your roll / admission number"
+                        autoComplete="username"
+                        required
+                        className="w-full pl-10 pr-4 py-3 bg-slate-900/80 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-blue-500 transition-colors"
+                      />
+                    </div>
+                  </div>
+                  {(needInstitute || institute) && (
+                    <div className="space-y-1.5">
+                      <label htmlFor="login-institute" className="text-xs font-bold text-slate-300 uppercase tracking-wider block">Institute code</label>
+                      <input
+                        id="login-institute"
+                        value={institute}
+                        onChange={(e) => setInstitute(e.target.value)}
+                        placeholder="Your institute's join code"
+                        className="w-full px-4 py-3 bg-slate-900/80 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-blue-500 transition-colors"
+                      />
+                    </div>
+                  )}
                 </div>
-              </div>
+              ) : (
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-slate-300 uppercase tracking-wider block">Email Address</label>
+                    <button type="button" onClick={() => setWithStudentId(true)} className="text-xs font-semibold text-blue-400 hover:text-blue-300">Student? Use your student ID</button>
+                  </div>
+                  <div className="relative">
+                    <Mail className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
+                    <input
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="student@astra.com, parent@apex.com, or mentor@astra.com"
+                      required
+                      className="w-full pl-10 pr-4 py-3 bg-slate-900/80 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-blue-500 transition-colors"
+                    />
+                  </div>
+                </div>
+              )}
 
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { test, expect, type APIRequestContext, type Browser, type Page } from '@playwright/test';
 
 /*
@@ -15,7 +16,8 @@ test.describe.configure({ mode: 'serial', timeout: 180_000 });
 
 const RUN = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 12) + Math.floor(Math.random() * 1000);
 const DOMAIN = 'astra-qa.test';
-const PASSWORD = 'QaPass-2026!';
+// Fresh per run (the accounts only live for the run); never commit a fixed password to a public repo
+const PASSWORD = process.env.E2E_QA_PASSWORD || `Qa-${randomUUID()}`;
 const mail = (who: string) => `${who}.${RUN}@${DOMAIN}`;
 
 const state: {

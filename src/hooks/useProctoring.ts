@@ -7,8 +7,11 @@ import { toast } from "sonner";
 // A single tab switch fires both `blur` and `visibilitychange`; count it once.
 const DEDUPE_MS = 1500;
 
-/** CBT proctoring: counts tab switches / focus loss / fullscreen exits and auto-submits at the limit. */
-export function useProctoring(active: boolean) {
+/**
+ * CBT proctoring: counts tab switches / focus loss / fullscreen exits and auto-submits at the limit.
+ * `report` = false for offline exams: the count is kept on the device and travels with the answers.
+ */
+export function useProctoring(active: boolean, report = true) {
   const attemptId = useExamStore((s) => s.attemptId);
   const maxViolations = useExamStore((s) => s.templateConfig?.proctoring?.maxViolations ?? 3);
   const detectionEnabled = useExamStore((s) => s.templateConfig?.proctoring?.enableTabSwitchDetection !== false);
@@ -25,7 +28,7 @@ export function useProctoring(active: boolean) {
     let count = store.violations + 1;
     store.setViolations(count);
 
-    if (attemptId) {
+    if (attemptId && report) {
       try {
         const res = await fetch(`/api/attempts/${attemptId}/violation`, {
           method: "POST",
@@ -54,7 +57,7 @@ export function useProctoring(active: boolean) {
     } else {
       toast.warning(`Warning: ${reason} (${count}/${maxViolations})`, { duration: 5000 });
     }
-  }, [attemptId, maxViolations]);
+  }, [attemptId, maxViolations, report]);
 
   useEffect(() => {
     if (!active) return;

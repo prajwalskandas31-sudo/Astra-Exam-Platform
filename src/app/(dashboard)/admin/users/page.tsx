@@ -14,6 +14,7 @@ interface UserRow {
   name: string;
   email: string;
   phone: string | null;
+  studentCode: string | null;
   role: AppRole;
   status: "APPROVED" | "PENDING" | "REJECTED";
   createdAt: string;
@@ -35,7 +36,7 @@ function matchesRole(u: UserRow, f: RoleFilter) {
   return u.role === f;
 }
 
-const emptyForm = { name: "", email: "", phone: "", password: "", role: "STUDENT", batchId: "" };
+const emptyForm = { name: "", email: "", phone: "", password: "", role: "STUDENT", batchId: "", studentCode: "" };
 
 export default function AdminUsersPage() {
   const { data: session } = useSession();
@@ -61,9 +62,10 @@ export default function AdminUsersPage() {
   const users = data ?? [];
   const visible = users.filter((u) => matchesRole(u, filter) && (!query || `${u.name} ${u.email}`.toLowerCase().includes(query.toLowerCase())));
 
-  const update = async (u: UserRow, patch: Partial<Pick<UserRow, "role" | "status" | "batchId">>) => {
+  const update = async (u: UserRow, patch: Partial<Pick<UserRow, "role" | "status" | "batchId" | "studentCode">>) => {
     try {
-      await apiFetch(`/api/users/${u.id}`, { method: "PATCH", json: patch });
+      const saved = await apiFetch<{ studentCode: string | null }>(`/api/users/${u.id}`, { method: "PATCH", json: patch });
+      if (patch.studentCode !== undefined) patch = { ...patch, studentCode: saved.studentCode };
       const batchName = patch.batchId !== undefined ? batches.data?.find((b) => b.id === patch.batchId)?.name ?? "Unassigned" : u.batch;
       setData(users.map((x) => (x.id === u.id ? { ...x, ...patch, batch: batchName } : x)));
       toast.success("User updated");
@@ -162,6 +164,18 @@ export default function AdminUsersPage() {
                       <td className="px-5 py-3">
                         <p className="font-medium text-slate-100">{u.name}{self && <span className="text-xs text-slate-500"> (you)</span>}</p>
                         <p className="text-xs text-slate-500">{u.email}{u.phone ? ` · ${u.phone}` : ""} · joined {formatDate(u.createdAt)}</p>
+                        {u.role === "STUDENT" && (
+                          <button
+                            onClick={() => {
+                              const next = window.prompt(`Student ID for ${u.name} (as used by your institute):`, u.studentCode ?? "");
+                              if (next !== null) update(u, { studentCode: next });
+                            }}
+                            className="mt-0.5 font-mono text-[11px] text-slate-400 underline decoration-dotted underline-offset-2 hover:text-blue-300"
+                            title="Set the student ID"
+                          >
+                            {u.studentCode ? `ID ${u.studentCode}` : "+ student ID"}
+                          </button>
+                        )}
                       </td>
                       <td className="px-3 py-3">
                         <select value={u.role} disabled={self} onChange={(e) => update(u, { role: e.target.value as AppRole })} className={`${inputClass} w-40 py-1.5 text-xs`} aria-label={`Role for ${u.name}`}>
@@ -204,6 +218,7 @@ export default function AdminUsersPage() {
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Full name"><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className={inputClass} /></Field>
           <Field label="Email"><input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className={inputClass} /></Field>
+          {form.role === "STUDENT" && <Field label="Student ID (optional)" hint="Your institute's roll / admission number"><input value={form.studentCode} onChange={(e) => setForm({ ...form, studentCode: e.target.value })} className={inputClass} /></Field>}
           <Field label="Mobile (optional)" hint="Needed for WhatsApp/SMS alerts and password resets"><input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className={inputClass} /></Field>
           <Field label="Temporary password" hint="At least 8 characters"><input value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className={inputClass} /></Field>
           <Field label="Role">

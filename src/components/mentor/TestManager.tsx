@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { toast } from "sonner";
-import { Archive, BarChart3, ClipboardList, Eye, EyeOff, Plus, Search, Trash2 } from "lucide-react";
+import { Archive, BarChart3, ClipboardList, Eye, EyeOff, MonitorCheck, Plus, Search, Shuffle, Trash2 } from "lucide-react";
 import { Badge, Btn, Card, EmptyState, ErrorState, Field, Modal, PageLoader, Tabs, formatDate, inputClass } from "@/components/ui/kit";
 import { apiFetch, useApi } from "@/lib/fetcher";
 import { cn } from "@/lib/utils";
@@ -20,6 +20,11 @@ interface Test {
   status: string;
   isPublished: boolean;
   scheduledStart: string | null;
+  shuffleMode: "OFF" | "PER_STUDENT" | "SETS";
+  shuffleOptions: boolean;
+  setCount: number;
+  centreExam: boolean;
+  allowOffline: boolean;
   createdAt: string;
   template: { name: string; examCategory: string } | null;
   batches: { id: string; name: string }[];
@@ -44,10 +49,70 @@ interface Template {
   totalDuration: number;
 }
 
+interface PaperSecurity {
+  shuffleMode: "OFF" | "PER_STUDENT" | "SETS";
+  shuffleOptions: boolean;
+  setCount: number;
+  centreExam: boolean;
+  allowOffline: boolean;
+}
+
+const defaultSecurity = (): PaperSecurity => ({ shuffleMode: "PER_STUDENT", shuffleOptions: true, setCount: 4, centreExam: false, allowOffline: false });
+
 const emptyForm = () => ({
   title: "", description: "", duration: 60, type: "PRACTICE", mode: "CBT", templateId: "",
   isPublished: true, scheduledStart: "", scheduledEnd: "",
+  ...defaultSecurity(),
 });
+
+type ExamModes = { examCentreEnabled: boolean; offlineExamsEnabled: boolean };
+
+/** Shuffling, named sets, and (when the institute has them on) Exam Centre and offline settings. */
+function PaperSecurityFields({ value, onChange, modes }: { value: PaperSecurity; onChange: (v: PaperSecurity) => void; modes: ExamModes | null }) {
+  const set = (patch: Partial<PaperSecurity>) => onChange({ ...value, ...patch });
+  return (
+    <div className="space-y-3 rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
+      <p className="flex items-center gap-2 text-sm font-semibold text-white"><Shuffle className="h-4 w-4 text-violet-300" />Paper security</p>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="Question order">
+          <select value={value.shuffleMode} onChange={(e) => set({ shuffleMode: e.target.value as PaperSecurity["shuffleMode"] })} className={inputClass} aria-label="Question order">
+            <option value="PER_STUDENT">Different order for every student (recommended)</option>
+            <option value="SETS">Named sets (A, B, C…)</option>
+            <option value="OFF">Same order for everyone</option>
+          </select>
+        </Field>
+        {value.shuffleMode === "SETS" && (
+          <Field label="Number of sets">
+            <select value={value.setCount} onChange={(e) => set({ setCount: Number(e.target.value) })} className={inputClass} aria-label="Number of sets">
+              {[2, 3, 4, 5, 6, 8].map((n) => <option key={n} value={n}>{n} sets ({"ABCDEFGH".slice(0, n).split("").join(", ")})</option>)}
+            </select>
+          </Field>
+        )}
+      </div>
+      {value.shuffleMode !== "OFF" && (
+        <label className="flex items-center gap-2 text-sm text-slate-300">
+          <input type="checkbox" checked={value.shuffleOptions} onChange={(e) => set({ shuffleOptions: e.target.checked })} className="h-4 w-4 accent-blue-500" />
+          <span>Shuffle the options too <span className="text-xs text-slate-500">(“All of the above”-style and numerical questions stay as they are)</span></span>
+        </label>
+      )}
+      <p className="text-xs text-slate-500">Sections stay together. Everyone gets the same questions and is graded the same way — only the order differs, so neighbours can&apos;t copy.</p>
+      {modes?.examCentreEnabled && (
+        <div className="space-y-2 border-t border-white/[0.06] pt-3">
+          <label className="flex items-start gap-2 text-sm text-slate-300">
+            <input type="checkbox" checked={value.centreExam} onChange={(e) => set({ centreExam: e.target.checked, allowOffline: e.target.checked && value.allowOffline })} className="mt-0.5 h-4 w-4 accent-blue-500" />
+            <span>Run in Exam Centre mode <span className="block text-xs text-slate-500">Invigilator start code, seat plan (neighbours get different sets) and a live room view.</span></span>
+          </label>
+          {modes.offlineExamsEnabled && (
+            <label className="flex items-start gap-2 text-sm text-slate-300">
+              <input type="checkbox" checked={value.allowOffline} onChange={(e) => set({ allowOffline: e.target.checked, centreExam: e.target.checked || value.centreExam })} className="mt-0.5 h-4 w-4 accent-blue-500" />
+              <span>Allow offline <span className="block text-xs text-slate-500">Devices download the encrypted paper beforehand and can sit the exam without internet; answers upload afterwards.</span></span>
+            </label>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function TestManager() {
   // Shared by /mentor/test-manager and /admin/test-manager; analysis pages live under the same base
@@ -59,6 +124,21 @@ export function TestManager() {
   const [batchIds, setBatchIds] = useState<string[]>([]);
   const [audienceFor, setAudienceFor] = useState<Test | null>(null);
   const [audienceIds, setAudienceIds] = useState<string[]>([]);
+  const modes = useApi<ExamModes>("/api/organization/exam-modes");
+  const [securityFor, setSecurityFor] = useState<Test | null>(null);
+  const [security, setSecurity] = useState<PaperSecurity>(defaultSecurity());
+
+  const saveSecurity = async () => {
+    if (!securityFor) return;
+    try {
+      await apiFetch(`/api/tests/${securityFor.id}`, { method: "PATCH", json: security });
+      toast.success("Paper security updated");
+      setSecurityFor(null);
+      tests.reload();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't update the test");
+    }
+  };
 
   const saveAudience = async () => {
     if (!audienceFor) return;
@@ -195,7 +275,17 @@ export function TestManager() {
                       </p>
                     </td>
                     <td className="px-3 py-3">
-                      <div className="flex gap-1"><Badge tone={t.type === "MOCK" ? "violet" : "blue"}>{t.type.toLowerCase()}</Badge><Badge>{t.mode}</Badge></div>
+                      <div className="flex flex-wrap gap-1">
+                        <Badge tone={t.type === "MOCK" ? "violet" : "blue"}>{t.type.toLowerCase()}</Badge><Badge>{t.mode}</Badge>
+                        <button
+                          onClick={() => { setSecurityFor(t); setSecurity({ shuffleMode: t.shuffleMode, shuffleOptions: t.shuffleOptions, setCount: t.setCount, centreExam: t.centreExam, allowOffline: t.allowOffline }); }}
+                          title="Paper security: change shuffling, sets or Exam Centre settings"
+                          aria-label={`Paper security for ${t.title}`}
+                        >
+                          <Badge tone={t.shuffleMode === "OFF" ? "slate" : "emerald"}>{t.shuffleMode === "SETS" ? `${t.setCount} sets` : t.shuffleMode === "PER_STUDENT" ? "shuffled" : "fixed order"}</Badge>
+                        </button>
+                        {t.centreExam && <Badge tone="amber">centre{t.allowOffline ? " · offline" : ""}</Badge>}
+                      </div>
                       <p className="mt-1 text-xs text-slate-500">{t.duration} min · {t.totalMarks} marks</p>
                     </td>
                     <td className="px-3 py-3 tabular-nums text-slate-300">{t._count.questions}</td>
@@ -205,6 +295,11 @@ export function TestManager() {
                     </td>
                     <td className="px-3 py-3">
                       <div className="flex justify-end gap-1">
+                        {t.centreExam && (
+                          <Link href={`${base}/${t.id}/centre`} className="inline-flex h-8 items-center gap-2 rounded-xl px-3 text-xs font-semibold text-amber-300 hover:bg-amber-500/10">
+                            <MonitorCheck className="h-3.5 w-3.5" />Centre
+                          </Link>
+                        )}
                         <Link href={`${base}/${t.id}`} className="inline-flex h-8 items-center gap-2 rounded-xl px-3 text-xs font-semibold text-slate-300 hover:bg-white/5 hover:text-white">
                           <BarChart3 className="h-3.5 w-3.5" />Results
                         </Link>
@@ -253,6 +348,16 @@ export function TestManager() {
             );
           })}
         </div>
+      </Modal>
+
+      <Modal
+        open={!!securityFor}
+        onClose={() => setSecurityFor(null)}
+        title="Paper security"
+        description={securityFor ? `${securityFor.title} — students who already started keep the paper they were given.` : undefined}
+        footer={<><Btn variant="secondary" onClick={() => setSecurityFor(null)}>Cancel</Btn><Btn onClick={saveSecurity}>Save</Btn></>}
+      >
+        <PaperSecurityFields value={security} onChange={setSecurity} modes={modes.data ?? null} />
       </Modal>
 
       <Modal
@@ -314,6 +419,11 @@ export function TestManager() {
               </div>
             </div>
           )}
+          <PaperSecurityFields
+            value={{ shuffleMode: form.shuffleMode, shuffleOptions: form.shuffleOptions, setCount: form.setCount, centreExam: form.centreExam, allowOffline: form.allowOffline }}
+            onChange={(v) => setForm({ ...form, ...v })}
+            modes={modes.data ?? null}
+          />
           <label className="flex items-center gap-2 text-sm text-slate-300">
             <input type="checkbox" checked={form.isPublished} onChange={(e) => setForm({ ...form, isPublished: e.target.checked })} className="h-4 w-4 accent-blue-500" />
             Publish to students immediately (they&apos;re notified by WhatsApp/SMS if messaging is set up)
